@@ -49,6 +49,7 @@ SHIFT + D =  Sort by Date
 SHIFT + C =  Copy File\
 SHIFT + X =  Move File\
 SHIFT + V =  Paste File\
+SHIFT + R = Rename File\
 DELETE = Delete File
 
 SHIFT + N =  New File (really this is just Touch)\
