@@ -20,7 +20,7 @@ Or see the offical website: https://invisible-island.net/ncurses/
 
 In your terminal:
 ```
-git clone git@github.com:StrictTangent/gopher.git
+git clone https://github.com/StrictTangent/gopher.git
 cd gopher
 make
 sudo make install
