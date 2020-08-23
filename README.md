@@ -1,6 +1,8 @@
 # gopher
 Terminal Based File Explorer w/ Ncurses
 
+![alt text](/images/screenshot01.png)
+
 ### DEPENDENCIES:
 
 This program requires the ncurses library.
