@@ -23,7 +23,7 @@ In your terminal:
 git clone git@github.com:StrictTangent/gopher.git
 cd gopher
 make
-make install
+sudo make install
 ```
 
 To run:
