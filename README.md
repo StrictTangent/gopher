@@ -46,9 +46,10 @@ SHIFT + A =  Sort Alphabetically\
 SHIFT + S =  Sort by Size\
 SHIFT + D =  Sort by Date
 
-SHIFT + C =  Copy a File\
-SHIFT + X =  Move a File\
-SHIFT + V =  Paste a File
+SHIFT + C =  Copy File\
+SHIFT + X =  Move File\
+SHIFT + V =  Paste File\
+DELETE = Delete File
 
 SHIFT + N =  New File (really this is just Touch)\
 SHIFT + M =  Make New Directory\
