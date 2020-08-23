@@ -54,7 +54,7 @@ DELETE = Delete File
 
 SHIFT + N =  New File (really this is just Touch)\
 SHIFT + M =  Make New Directory\
-SHIFT + T =  Launch a terminal session at current directory
+SHIFT + T =  Launch a terminal session at current directory (Type 'exit' to return to gopher).
 
 When opening a file, you must type in the name of the program you wish to open the file with.\
 For example, when opening myvideo.mp4, you might type 'vlc'.
