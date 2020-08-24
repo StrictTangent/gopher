@@ -22,8 +22,9 @@
 #define MAXLEN 800
 #define MAXITEMS 50000
 #define MENUWIDTH_MAX 120
+
 #define MENUHEIGHT_MAX 40
-//#define MENUHEIGHT 20
+
 int MENUHEIGHT = 20;
 int MENUWIDTH = 100;
 
@@ -69,6 +70,19 @@ void rename_file(file_info * current_file_info);
 int new_dir();
 void file_touch();
 void open_terminal();
+void handle_winch(int sig);
+
+//Global pointer copies for use by signal handler "handle_winch"
+file_info ** sig_filelist;
+ITEM ** sig_menu_items;
+int * sig_nchoices;
+MENU ** sig_dir_menu;
+WINDOW ** sig_dir_menu_win;
+char * sig_dirbuff;
+
+// Function Pointer for current comparator.
+// Kept global for use by handle_winch
+int (*comp_func)(const void *, const void *);
 
 int main() {
   
@@ -84,7 +98,8 @@ int main() {
   ITEM ** opt_items = calloc(20, sizeof(ITEM *));
   
   //Current sort function pointer
-  int (*comp_func)(const void *, const void *) = &filecomp_name;
+  //int (*comp_func)(const void *, const void *) = &filecomp_name;
+  comp_func = &filecomp_name;
 
   initscr();
   start_color();
@@ -96,6 +111,7 @@ int main() {
   init_pair(2, COLOR_CYAN, COLOR_BLACK);
   init_pair(3, COLOR_MAGENTA, COLOR_CYAN);
 
+   
 
   char msgbuff[MSGWIDTH - 2];
   sprintf(&msgbuff[MSGWIDTH -6], "...");
@@ -139,8 +155,22 @@ int main() {
   dup2(log_fd, 2);
   int bufflen = 200;
   char errorbuff[bufflen];
-  
 
+
+  //Set up signal handler for resize
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(struct sigaction));
+  sa.sa_handler = handle_winch;
+  sigaction(SIGWINCH, &sa, NULL);
+  
+  sig_filelist = filelist;
+  sig_menu_items = menu_items;
+  sig_nchoices = &n_choices;
+  sig_dir_menu = &dir_menu;
+  sig_dir_menu_win = &dir_menu_win;
+  sig_dirbuff = dirbuff;
+  //End signal handler setup
+  
   while(1){
 
     MENUHEIGHT = LINES - 6;
@@ -539,6 +569,8 @@ int main() {
 	    open_terminal();
 	    refresh();
 	    break;
+
+	  
 	  }
 
 	
@@ -973,7 +1005,8 @@ int build_filelist(file_info ** filelist, DIR * dfd){
 
   int SHORTWIDTH = 21;
   //45
-  SHORTWIDTH = MENUWIDTH - 50;
+  SHORTWIDTH = MENUWIDTH - 55;
+  SHORTWIDTH = SHORTWIDTH < 8 ? 8 : SHORTWIDTH;
   
   
   while ((dp = readdir(dfd))) {
@@ -1218,3 +1251,21 @@ void open_terminal(){
   refresh_littlebox(errorbuff);
 }
 
+// Signal handler for screen resize
+void handle_winch(int sig){
+  //fprintf(stderr, "Signal caught\n");
+  DIR * dfd;
+  MENUHEIGHT = LINES - 6;
+  MENUWIDTH = COLS - 6;
+  MENUWIDTH = MENUWIDTH > MENUWIDTH_MAX ? MENUWIDTH_MAX : MENUWIDTH;
+  
+  MENUHEIGHT = MENUHEIGHT > MENUHEIGHT_MAX ? MENUHEIGHT_MAX : MENUHEIGHT;
+  endwin();
+  refresh();
+  if (!(dfd = opendir(sig_dirbuff))){
+    fprintf(stderr, "Can't open directory\n");
+  }
+  *sig_nchoices = build_filelist(sig_filelist, dfd);
+  sortfiles(sig_filelist, *sig_nchoices, comp_func);
+  refresh_menu(sig_filelist, sig_menu_items, *sig_nchoices, sig_dir_menu, sig_dir_menu_win, sig_dirbuff);
+}
