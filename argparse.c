@@ -24,7 +24,7 @@ char ** arg_parse (char *line, int *argcptr){
   // Print error & return NULL if unsuccesful.
   aryptr = (char**) malloc(sizeof(char*) * (*argcptr + 1));
   if (aryptr == NULL) {
-    fprintf(stderr, "ush: unable to allocate memory for argument list\n");
+    fprintf(stderr, "unable to allocate memory for argument list\n");
     *argcptr = 0;
     return NULL;
   }
@@ -55,7 +55,7 @@ int countArgs(char* line) {
           while(*line != '\"'){
             //If no closing quote encountered, print error & return
             if (*line == 0) {
-              fprintf(stderr, "ush: odd number of quotes\n");
+              fprintf(stderr, "odd number of quotes\n");
               return -1;
             }
             line++;
