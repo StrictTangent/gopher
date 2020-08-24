@@ -31,11 +31,12 @@ int MENUWIDTH = 100;
 #define X_OFFSET 4
 #define Y_OFFSET 1
 #define MSGWIDTH MENUWIDTH - 4
-//#define MSGWIDTH 200
 
+// These aren't really necessary
 int USE_OPTIONS_MENU = 1;
 int IN_OPTIONS_MENU = 0;
 
+// Struct for the filelist
 typedef struct {
   char * name;
   char * name_short;
@@ -75,7 +76,8 @@ void executecommand();
 
 char  ** arg_parse (char *line, int *argcptr);
 
-//Global pointer copies for use by signal handler "handle_winch"
+// Global pointer copies for use by signal handler "handle_winch"
+// (Consider Just making the originals global...)
 file_info ** sig_filelist;
 ITEM ** sig_menu_items;
 int * sig_nchoices;
@@ -83,13 +85,19 @@ MENU ** sig_dir_menu;
 WINDOW ** sig_dir_menu_win;
 char * sig_dirbuff;
 
+
 // Function Pointer for current comparator.
 // Kept global for use by handle_winch
 int (*comp_func)(const void *, const void *);
 
+
 int main() {
-  
-  ITEM ** menu_items = calloc(MAXITEMS, sizeof(ITEM *));
+  ITEM ** menu_items;
+  if ((menu_items = calloc(MAXITEMS, sizeof(ITEM *))) == NULL){
+    perror("calloc");
+    exit(errno);
+  }
+
   int c, opt_ret;
   MENU * dir_menu = NULL;
   WINDOW * dir_menu_win;
@@ -98,7 +106,11 @@ int main() {
   //optionsmenu
   MENU * opt_menu = NULL;
   WINDOW * opt_menu_win;
-  ITEM ** opt_items = calloc(20, sizeof(ITEM *));
+  ITEM ** opt_items;
+  if ((opt_items = calloc(20, sizeof(ITEM *))) == NULL){
+    perror("calloc");
+    exit(errno);
+  }
   
   //Current sort function pointer
   //int (*comp_func)(const void *, const void *) = &filecomp_name;
@@ -129,8 +141,11 @@ int main() {
   if (!(dfd = opendir(dirbuff))){
     fprintf(stderr, "Can't open directory\n");
   }
-  
-  file_info ** filelist= calloc(MAXITEMS, sizeof(file_info *));
+  file_info ** filelist;
+  if ((filelist= calloc(MAXITEMS, sizeof(file_info *))) == NULL){
+    perror("calloc");
+    exit(errno);
+  }
   
   char clipboard[MAXLEN];
   clipboard[0] = 0;
@@ -149,15 +164,12 @@ int main() {
   int CHANGEDIR;
 
   //logfile
-
   struct passwd *pw = getpwuid(getuid());
   const char *homedir = pw->pw_dir;
   char logdir[200];
   sprintf(logdir, "%s/.gopherlog", homedir);
   int log_fd = open(logdir, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
   dup2(log_fd, 2);
-  int bufflen = 200;
-  char errorbuff[bufflen];
 
 
   //Set up signal handler for resize
@@ -202,7 +214,7 @@ int main() {
       int abort = 0;
       // a - z => go to next item starting with that letter
       if (c >= 'a' && c <= 'z'){
-	set_current_item(dir_menu, get_lettered_item(menu_items, current_item(dir_menu), n_choices, c));
+	      set_current_item(dir_menu, get_lettered_item(menu_items, current_item(dir_menu), n_choices, c));
 
       } else {
 	switch(c)
@@ -650,7 +662,7 @@ void print_in_middle(WINDOW *win, int starty, int startx, int width, char *strin
 	refresh();
 }
 
-// Sort by filename
+// Comparator - Sort by filename ascending
 int filecomp_name(const void * ptr1, const void * ptr2){
   char * A =  (*(file_info **) ptr1)->name;
   char * B =  (*(file_info **) ptr2)->name;
@@ -674,11 +686,13 @@ int filecomp_name(const void * ptr1, const void * ptr2){
     return 1;
   return -1;
 }
+
+// Comparator - Sort by date decending
 int filecomp_name_desc(const void * ptr1, const void * ptr2){
   return filecomp_name(ptr1, ptr2) * -1;
 }
 
-// Sort by filesize
+// Comparator - Sort by size ascending
 int filecomp_size(const void * ptr1, const void * ptr2){
   size_t A =  (*(file_info **) ptr1)->bytes;
   size_t B =  (*(file_info **) ptr2)->bytes;
@@ -687,10 +701,13 @@ int filecomp_size(const void * ptr1, const void * ptr2){
   if (A < B) return -1;
   return 0;
 }
+
+// Comparator - Sort by size decending
 int filecomp_size_desc(const void * ptr1, const void * ptr2){
   return filecomp_size(ptr1, ptr2) * -1;
 }
 
+// Comparator - Sort by date ascending
 int filecomp_date(const void * ptr1, const void * ptr2){
   time_t A =  (*(file_info **) ptr1)->mod_time;
   time_t B =  (*(file_info **) ptr2)->mod_time;
@@ -698,16 +715,20 @@ int filecomp_date(const void * ptr1, const void * ptr2){
   if (A < B) return -1;
   return 0;
 }
+
+// Comparator - Sort by date descending
 int filecomp_date_desc(const void * ptr1, const void * ptr2){
   return filecomp_date(ptr1, ptr2) * -1;
 }
 
+// Sorts the filelist using qsort() and a given comparator.
 void sortfiles(file_info ** filelist, int count, int (*func)(const void * ptr1, const void * ptr2)){
   filelist++;
   count--;
   qsort(filelist, count, sizeof(file_info *), func);
 }
 
+// Presents and controls the dropdown options menu
 int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu_win, ITEM ** opt_items, file_info * current_file_info, int item_no){
   char ** options;
   int i;
@@ -882,6 +903,7 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
   return ret;
 }
 
+// Refreshes the main menu using the contents of filelist
 void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU ** dir_menu, WINDOW ** dir_menu_win, char * dirbuff){
   int i = 0;
 
@@ -966,6 +988,7 @@ void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU 
   
 }
 
+// Frees the contents of a filelist (file **)
 void clear_filelist(file_info ** filelist){
   while ((*filelist) != NULL){
     
@@ -986,6 +1009,7 @@ void clear_filelist(file_info ** filelist){
   }
 }
 
+// Frees the filelist (file_info **), and it's contents
 void destroy_filelist(file_info ** filelist){
   file_info ** begin = filelist;
   clear_filelist(filelist);
@@ -1011,6 +1035,7 @@ ITEM * get_lettered_item(ITEM ** menu_items, ITEM * current, int num_items, char
 
 }
 
+// Refreshes the filelist for given directory
 int build_filelist(file_info ** filelist, DIR * dfd){
   struct dirent * dp;
   struct stat stbuf;
@@ -1034,21 +1059,36 @@ int build_filelist(file_info ** filelist, DIR * dfd){
       }
       
       stat(dp->d_name, &stbuf);
-      filelist[item_no] = calloc(1, sizeof(file_info));
-      filelist[item_no]->size = (char *) malloc(50);
-      filelist[item_no]->name = (char *) malloc(strlen(dp->d_name) + 1);
+      int namelen = strlen(dp->d_name);
+      if ((filelist[item_no] = calloc(1, sizeof(file_info))) == NULL){
+        perror("calloc");
+        exit(errno);
+      }
+      if ((filelist[item_no]->size = (char *) malloc(50)) == NULL){
+        perror("malloc");
+        exit(errno);
+      }
+      if ((filelist[item_no]->name = (char *) malloc(namelen + 1)) == NULL){
+        perror("malloc");
+        exit(errno);
+      }
      
-      filelist[item_no]->type = (char *) malloc(10);
+      if ((filelist[item_no]->type = (char *) malloc(10))== NULL){
+        perror("malloc");
+        exit(errno);
+      }
 
-      filelist[item_no]->description = (char *) calloc(100, 1);
+      if ((filelist[item_no]->description = (char *) calloc(100, 1)) == NULL){
+        perror("calloc");
+        exit(errno);
+      }
 
       filelist[item_no]->mod_date = (ctime(&stbuf.st_mtim.tv_sec));
       filelist[item_no]->mod_time = stbuf.st_mtim.tv_sec;
       
-      memcpy(filelist[item_no]->name, dp->d_name, strlen(dp->d_name) + 1);
-      //filelist[item_no]->name_short = strndup(dp->d_name, 21);
+      memcpy(filelist[item_no]->name, dp->d_name, namelen + 1);
       filelist[item_no]->name_short = strndup(dp->d_name, SHORTWIDTH);
-      int namelen = strlen(dp->d_name);
+      
       if(namelen > SHORTWIDTH - 1){
 	char * temp = &filelist[item_no]->name_short[SHORTWIDTH - 3];
 	
@@ -1087,6 +1127,7 @@ int build_filelist(file_info ** filelist, DIR * dfd){
   
 }
 
+// Print test to the bottom box
 void refresh_littlebox(char * msg){
   move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
   clrtoeol();
@@ -1104,6 +1145,7 @@ void refresh_littlebox(char * msg){
   refresh();
 }
 
+// Attempt to open file with a given program name
 void run_prog(file_info * current_file_info, char * prog_name){
   int status;
   pid_t cpid;;
@@ -1140,6 +1182,7 @@ void run_prog(file_info * current_file_info, char * prog_name){
   refresh_littlebox(errorbuff);
 }
 
+// Rename selected file
 void rename_file(file_info * current_file_info){
 
   char  new_name[80];
@@ -1188,6 +1231,7 @@ void rename_file(file_info * current_file_info){
 
 }
 
+// Create new directory with mkdir()
 int new_dir(){
   char  dir_name[80];
   refresh_littlebox("Directory Name: ");
@@ -1200,6 +1244,7 @@ int new_dir(){
   return 0;
 }
 
+// Touch given filename (create new file)
 void file_touch(){
   char touch_name[80];
   refresh_littlebox("Touch: ");
@@ -1231,6 +1276,7 @@ void file_touch(){
   }
 }
 
+// Run bash
 void open_terminal(){
   int status;
   pid_t cpid;;
@@ -1253,7 +1299,10 @@ void open_terminal(){
   if (cpid == 0){ //we are child
     close(fd[0]); // close read end of pipe
     //execvp(args[0], args);
-    printf("bash session - %s\nType 'exit' to return to gopher\n\n", sig_dirbuff);
+    printf("\n=================================================\n");
+    printf(" bash session - %s\n", sig_dirbuff);
+    printf(" Type 'exit' to return to gopher\n");
+    printf("=================================================\n");
     execlp("/bin/bash", "bash", (char*) NULL);
     write(fd[1], strerror(errno), bufflen);
     fclose(stdin);
@@ -1289,11 +1338,14 @@ void handle_winch(int sig){
   refresh_menu(sig_filelist, sig_menu_items, *sig_nchoices, sig_dir_menu, sig_dir_menu_win, sig_dirbuff);
 }
 
+// Exec a given command
 void executecommand(){
   char command[200];
   refresh_littlebox("Execute Command: ");
   echo();
+  curs_set(1);
   getstr(command);
+  curs_set(0);
   noecho();
 
 
@@ -1319,6 +1371,9 @@ void executecommand(){
   }
   */
   endwin();
+  printf("\n==========================\n");
+  printf("|| Executing Command... ||\n");
+  printf("==========================\n");
   cpid = fork();
 
   
@@ -1327,7 +1382,10 @@ void executecommand(){
     close(fd[0]); // close read end of pipe
     //close(fd_out[0]);
     execvp(args[0], args);
-    write(fd[1], strerror(errno), bufflen);
+    //perror("exec");
+    
+    fprintf(stdout, "exec: %s\n", strerror(errno));
+    //write(fd[1], strerror(errno), bufflen);
     fclose(stdin);
     exit(127);
   }
@@ -1336,16 +1394,21 @@ void executecommand(){
   if (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
-  printf("\nFinished. Press any key to return to gopher\n");
+  printf("=================================================\n");
+  printf("|| Finished. Press any key to return to gopher ||\n");
+  printf("=================================================\n");
+  cbreak();
   getch();
   free(args);
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   //close(fd_out[1]);
   //read(fd_out[0], outbuff, 2000);
-  refresh();
+  
   read(fd[0], errorbuff, bufflen);
   refresh_littlebox(errorbuff);
+  refresh();
+  sleep(2);
   //mvprintw(MENUHEIGHT + Y_OFFSET + 3, 0, "%s", outbuff);
   
 
