@@ -70,9 +70,9 @@ void run_prog(file_info * current_file_info, char * prog_name);
 void rename_file(file_info * current_file_info);
 int new_dir();
 void file_touch();
-void open_terminal();
+void open_terminal(char * dirbuff);
 void handle_winch(int sig);
-void executecommand();
+void executecommand(char * msgbuff);
 
 char  ** arg_parse (char *line, int *argcptr);
 
@@ -96,7 +96,7 @@ int main() {
   if ((menu_items = calloc(MAXITEMS, sizeof(ITEM *))) == NULL){
     perror("calloc");
     exit(errno);
-  }
+  } 
 
   int c, opt_ret;
   MENU * dir_menu = NULL;
@@ -581,7 +581,7 @@ int main() {
 
 	  case 'T':
 	    endwin();
-	    open_terminal();
+	    open_terminal(dirbuff);
 	    if (!(dfd = opendir(dirbuff))){
 	      fprintf(stderr, "Can't open directory\n");
 	    }
@@ -592,13 +592,14 @@ int main() {
 	    break;
 
 	  case 'E':
-	    executecommand();
+	    executecommand(msgbuff);
 	    if (!(dfd = opendir(dirbuff))){
 	      fprintf(stderr, "Can't open directory\n");
 	    }
 	    n_choices = build_filelist(filelist, dfd);
 	    sortfiles(filelist, n_choices, comp_func);
 	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+      refresh_littlebox(msgbuff);
 	    break;
 	  }
 
@@ -1277,7 +1278,7 @@ void file_touch(){
 }
 
 // Run bash
-void open_terminal(){
+void open_terminal(char * dirbuff){
   int status;
   pid_t cpid;;
 
@@ -1300,7 +1301,7 @@ void open_terminal(){
     close(fd[0]); // close read end of pipe
     //execvp(args[0], args);
     printf("\n=================================================\n");
-    printf(" bash session - %s\n", sig_dirbuff);
+    printf(" bash session - %s\n", dirbuff);
     printf(" Type 'exit' to return to gopher\n");
     printf("=================================================\n");
     execlp("/bin/bash", "bash", (char*) NULL);
@@ -1339,7 +1340,7 @@ void handle_winch(int sig){
 }
 
 // Exec a given command
-void executecommand(){
+void executecommand(char * msgbuff){
   char command[200];
   refresh_littlebox("Execute Command: ");
   echo();
@@ -1351,25 +1352,17 @@ void executecommand(){
 
   int status;
   pid_t cpid;;
-
   int fd[2];
-  //int fd_out[2];
+
   int bufflen = MSGWIDTH - 2;
-  char errorbuff[bufflen];
-  //char outbuff[2000];
 
   int arg_count;
   char ** args = arg_parse(command, &arg_count);
 
-  
   if (pipe(fd) < 0){
     perror("pipe");
   }
-  /*
-  if (pipe(fd_out) < 0){
-    perror("pipe");
-  }
-  */
+
   endwin();
   printf("\n==========================\n");
   printf("|| Executing Command... ||\n");
@@ -1378,14 +1371,12 @@ void executecommand(){
 
   
   if (cpid == 0){ //we are child
-    //dup2(fd_out[1], 1);
     close(fd[0]); // close read end of pipe
-    //close(fd_out[0]);
+
     execvp(args[0], args);
-    //perror("exec");
-    
+
     fprintf(stdout, "exec: %s\n", strerror(errno));
-    //write(fd[1], strerror(errno), bufflen);
+    write(fd[1], strerror(errno), bufflen);
     fclose(stdin);
     exit(127);
   }
@@ -1402,16 +1393,9 @@ void executecommand(){
   free(args);
   write(fd[1], "Success", bufflen);
   close(fd[1]);
-  //close(fd_out[1]);
-  //read(fd_out[0], outbuff, 2000);
   
-  read(fd[0], errorbuff, bufflen);
-  refresh_littlebox(errorbuff);
+  read(fd[0], msgbuff, bufflen);
+
   refresh();
-  sleep(2);
-  //mvprintw(MENUHEIGHT + Y_OFFSET + 3, 0, "%s", outbuff);
-  
-
-
 
 }
