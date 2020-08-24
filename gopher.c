@@ -71,6 +71,9 @@ int new_dir();
 void file_touch();
 void open_terminal();
 void handle_winch(int sig);
+void executecommand();
+
+char  ** arg_parse (char *line, int *argcptr);
 
 //Global pointer copies for use by signal handler "handle_winch"
 file_info ** sig_filelist;
@@ -567,10 +570,24 @@ int main() {
 	  case 'T':
 	    endwin();
 	    open_terminal();
+	    if (!(dfd = opendir(dirbuff))){
+	      fprintf(stderr, "Can't open directory\n");
+	    }
+	    n_choices = build_filelist(filelist, dfd);
+	    sortfiles(filelist, n_choices, comp_func);
+	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
 	    refresh();
 	    break;
 
-	  
+	  case 'E':
+	    executecommand();
+	    if (!(dfd = opendir(dirbuff))){
+	      fprintf(stderr, "Can't open directory\n");
+	    }
+	    n_choices = build_filelist(filelist, dfd);
+	    sortfiles(filelist, n_choices, comp_func);
+	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    break;
 	  }
 
 	
@@ -1218,11 +1235,9 @@ void open_terminal(){
   int status;
   pid_t cpid;;
 
-  char * args[2];
-  args[0] = "/bin/bash";
-  args[1] = NULL;
-  //args[1] = "-is";
-  //args[2] = NULL;
+  //char * args[2];
+  //args[0] = "/bin/bash";
+  //args[1] = NULL;
 
   int fd[2];
   int bufflen = 80;
@@ -1232,10 +1247,14 @@ void open_terminal(){
   }
   
   cpid = fork();
+
+  
   
   if (cpid == 0){ //we are child
     close(fd[0]); // close read end of pipe
-    execvp(args[0], args);
+    //execvp(args[0], args);
+    printf("bash session - %s\nType 'exit' to return to gopher\n\n", sig_dirbuff);
+    execlp("/bin/bash", "bash", (char*) NULL);
     write(fd[1], strerror(errno), bufflen);
     fclose(stdin);
     exit(127);
@@ -1268,4 +1287,68 @@ void handle_winch(int sig){
   *sig_nchoices = build_filelist(sig_filelist, dfd);
   sortfiles(sig_filelist, *sig_nchoices, comp_func);
   refresh_menu(sig_filelist, sig_menu_items, *sig_nchoices, sig_dir_menu, sig_dir_menu_win, sig_dirbuff);
+}
+
+void executecommand(){
+  char command[200];
+  refresh_littlebox("Execute Command: ");
+  echo();
+  getstr(command);
+  noecho();
+
+
+  int status;
+  pid_t cpid;;
+
+  int fd[2];
+  //int fd_out[2];
+  int bufflen = MSGWIDTH - 2;
+  char errorbuff[bufflen];
+  //char outbuff[2000];
+
+  int arg_count;
+  char ** args = arg_parse(command, &arg_count);
+
+  
+  if (pipe(fd) < 0){
+    perror("pipe");
+  }
+  /*
+  if (pipe(fd_out) < 0){
+    perror("pipe");
+  }
+  */
+  endwin();
+  cpid = fork();
+
+  
+  if (cpid == 0){ //we are child
+    //dup2(fd_out[1], 1);
+    close(fd[0]); // close read end of pipe
+    //close(fd_out[0]);
+    execvp(args[0], args);
+    write(fd[1], strerror(errno), bufflen);
+    fclose(stdin);
+    exit(127);
+  }
+  
+  
+  if (waitpid(cpid, &status, 0) < 0){
+    perror("wait");
+  }
+  printf("\nFinished. Press any key to return to gopher\n");
+  getch();
+  free(args);
+  write(fd[1], "Success", bufflen);
+  close(fd[1]);
+  //close(fd_out[1]);
+  //read(fd_out[0], outbuff, 2000);
+  refresh();
+  read(fd[0], errorbuff, bufflen);
+  refresh_littlebox(errorbuff);
+  //mvprintw(MENUHEIGHT + Y_OFFSET + 3, 0, "%s", outbuff);
+  
+
+
+
 }

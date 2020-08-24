@@ -4,7 +4,7 @@ CFLAGS= -lmenu -lncurses
 
 PREFIX = /usr/local
 
-FILES = gopher.c
+FILES = gopher.c argparse.c
 OBJECTS = ${FILES:.c=.o}
 
 gopher: $(OBJECTS)
