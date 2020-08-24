@@ -56,7 +56,7 @@ DELETE = Delete File
 
 SHIFT + N =  New File (really this is just Touch)\
 SHIFT + M =  Make New Directory\
-SHIFT + T =  Launch a terminal session at current directory (Type 'exit' to return to gopher).
+SHIFT + T =  Launch a terminal session at current directory (Type 'exit' to return to gopher).\
 SHIFT + E =  Execute a single command. Drops to terminal to display output. Press any key to return.
 
 When opening a file, you must type in the name of the program you wish to open the file with.\
