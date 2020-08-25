@@ -5,7 +5,7 @@ Terminal Based File Explorer w/ Ncurses
 
 ### DEPENDENCIES:
 
-This program requires the ncurses library,\\
+This program requires the ncurses library,\
 and also zip & unzip for .zip files.
 
 To install ncurses on Ubuntu: 
