@@ -8,7 +8,7 @@ FILES = gopher.c argparse.c
 OBJECTS = ${FILES:.c=.o}
 
 gopher: $(OBJECTS)
-	$(CC) $(CFLAGS) -o gopher $(OBJECTS)
+	$(CC) -o gopher $(OBJECTS) $(CFLAGS)
 
 clean:
 	rm -rf gopher $(OBJECTS)
