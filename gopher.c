@@ -50,6 +50,11 @@ typedef struct {
   time_t mod_time;
 } file_info;
 
+enum compressors {ZIP = 2000,
+                  UNZIP,
+                  TAR,
+                  UNTAR};
+
 void print_in_middle(WINDOW *win, int starty, int startx, int width, char *string, chtype color);
 void sortfiles(file_info ** filelist, int count, int (*func)(const void * ptr1, const void * ptr2));
 void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU ** dir_menu, WINDOW ** dir_menu_win, char * dirbuff);
@@ -73,6 +78,10 @@ void file_touch();
 void open_terminal(char * dirbuff);
 void handle_winch(int sig);
 void executecommand(char * msgbuff);
+void unzip(file_info * current_file_info, char * msgbuff);
+void extract_tar(file_info * current_file_info, char * msgbuff);
+void zip(file_info * current_file_info, char * msgbuff);
+void compress_tar(file_info * current_file_info, char * msgbuff);
 
 char  ** arg_parse (char *line, int *argcptr);
 
@@ -601,6 +610,51 @@ int main() {
 	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
       refresh_littlebox(msgbuff);
 	    break;
+
+      case UNZIP:
+      
+        unzip(filelist[item_index(current_item(dir_menu))], msgbuff);
+        if (!(dfd = opendir(dirbuff))){
+	        fprintf(stderr, "Can't open directory\n");
+	      }
+	      n_choices = build_filelist(filelist, dfd);
+	      sortfiles(filelist, n_choices, comp_func);
+	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+        refresh_littlebox(msgbuff);
+        break;
+
+        case UNTAR:
+        extract_tar(filelist[item_index(current_item(dir_menu))], msgbuff);
+        if (!(dfd = opendir(dirbuff))){
+	        fprintf(stderr, "Can't open directory\n");
+	      }
+	      n_choices = build_filelist(filelist, dfd);
+	      sortfiles(filelist, n_choices, comp_func);
+	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+        refresh_littlebox(msgbuff);
+        break;
+
+      case ZIP:
+        zip(filelist[item_index(current_item(dir_menu))], msgbuff);
+        if (!(dfd = opendir(dirbuff))){
+	        fprintf(stderr, "Can't open directory\n");
+	      }
+	      n_choices = build_filelist(filelist, dfd);
+	      sortfiles(filelist, n_choices, comp_func);
+	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+        refresh_littlebox(msgbuff);
+        break;
+
+      case TAR:
+        compress_tar(filelist[item_index(current_item(dir_menu))], msgbuff);
+        if (!(dfd = opendir(dirbuff))){
+	        fprintf(stderr, "Can't open directory\n");
+	      }
+	      n_choices = build_filelist(filelist, dfd);
+	      sortfiles(filelist, n_choices, comp_func);
+	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+        refresh_littlebox(msgbuff);
+        break;
 	  }
 
 	
@@ -683,9 +737,8 @@ int filecomp_name(const void * ptr1, const void * ptr2){
   if (*A == *B){ //both null
     return 0;
   }
-  if (*A == 0)
-    return 1;
-  return -1;
+  if (*A == 0) return -1;
+  return 1;
 }
 
 // Comparator - Sort by date decending
@@ -744,19 +797,41 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
 
   if (item_no >= MENUHEIGHT - 4) item_no = MENUHEIGHT - 5;
   
+  int n_choices;
   char * f_options[] = {"OPEN",
 		       "COPY",
 		       "MOVE",
 		       "DELETE",
 		       "RENAME",		       
-			"----------",
+			"------------",
 			"PASTE",
 			"NEW FILE",
 			"MAKE DIR",
 			"TERMINAL",
-			"BACK",
-		       NULL};
+      "------------",
+      "compress as:", //11
+      "ZIP",
+      "TAR.GZ",
+      "------------",
+			"BACK", //15
+		       NULL,
+           NULL};
+  n_choices = 16;
+  if (strstr(current_file_info->name, ".tar.gz")){
+    f_options[11] = "EXTRACT HERE";
+    f_options[12] = f_options[14];
+    f_options[13] = f_options[15];
+    f_options[14] = NULL;
+    n_choices = 14;
+  } else if (strstr(current_file_info->name, ".zip")){
+    f_options[11] = "UNZIP HERE";
+    f_options[12] = f_options[14];
+    f_options[13] = f_options[15];
+    f_options[14] = NULL;
+    n_choices = 14;
+  }
   
+
   char * d_options[] = {"OPEN",
 		       "COPY",
 		       "MOVE",
@@ -773,7 +848,7 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
   } else {
     options = f_options;
   }
-  int n_choices = 11;
+  
   i = 0;
   while (options[i]){
     opt_items[i] = new_item(options[i], "");
@@ -785,12 +860,12 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
   *opt_menu = new_menu((ITEM **) opt_items);
   
   //Create window
-  *opt_menu_win = newwin(9, 12, Y_OFFSET  + y, X_OFFSET + 33);
+  *opt_menu_win = newwin(10, 14, Y_OFFSET  + y, X_OFFSET + 33);
   keypad(*opt_menu_win, TRUE);
   
   set_menu_win(*opt_menu, *opt_menu_win);
-  set_menu_sub(*opt_menu, derwin(*opt_menu_win, 7, 10, 1, 1));
-  set_menu_format(*opt_menu, 7, 1);
+  set_menu_sub(*opt_menu, derwin(*opt_menu_win, 8, 12, 1, 1));
+  set_menu_format(*opt_menu, 8, 1);
   set_menu_mark(*opt_menu, "");
 
   set_menu_fore(*opt_menu, COLOR_PAIR(3) | A_REVERSE);
@@ -881,7 +956,15 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
 	  ret = 'M';
 	} else if (!strcmp(item_name(curr), "TERMINAL")) {
 	  ret = 'T';
-	} else {
+	} else if (!strcmp(item_name(curr), "ZIP")){
+    ret = ZIP;
+  } else if (!strcmp(item_name(curr), "UNZIP HERE")){
+    ret = UNZIP;
+  } else if (!strcmp(item_name(curr), "EXTRACT HERE")) {
+    ret = UNTAR;
+  } else if (!strcmp(item_name(curr), "TAR.GZ")) {
+    ret = TAR;
+  } else {
 	  break;
 	}
 	loop = 0;
@@ -1398,4 +1481,137 @@ void executecommand(char * msgbuff){
 
   refresh();
 
+}
+
+void zip(file_info * current_file_info, char * msgbuff){
+  pid_t cpid;
+  int status;
+  int fd[2];
+
+  int bufflen = MSGWIDTH - 2;
+
+  char archive_name[200];
+  if (snprintf(archive_name, 200, "%s.zip", current_file_info->name) >= 200){
+    sprintf(msgbuff, "Filename too long");
+    return;
+  }
+
+  if (pipe(fd) < 0){
+    perror("pipe");
+  }
+  endwin();
+  cpid = fork();
+  if (cpid == 0){ //we are child
+    close(fd[0]);
+    execlp("zip", "zip", "-r", archive_name, current_file_info->name, NULL);
+    write(fd[1], strerror(errno), bufflen);
+    //perror("exec");
+    fclose(stdin);
+    exit(127);
+  }
+
+  if (waitpid(cpid, &status, 0) < 0){
+    perror("wait");
+  }
+  refresh();
+  write(fd[1], "Success", bufflen);
+  close(fd[1]);
+  read(fd[0], msgbuff, bufflen);
+
+}
+
+void unzip(file_info * current_file_info, char * msgbuff){
+  pid_t cpid;
+  int status;
+  int fd[2];
+
+  int bufflen = MSGWIDTH - 2;
+
+  if (pipe(fd) < 0){
+    perror("pipe");
+  }
+  endwin();
+  cpid = fork();
+  if (cpid == 0){ //we are child
+    close(fd[0]);
+    execlp("unzip", "unzip", "-u", current_file_info->name, NULL);
+    write(fd[1], strerror(errno), bufflen);
+    //perror("exec");
+    fclose(stdin);
+    exit(127);
+  }
+
+  if (waitpid(cpid, &status, 0) < 0){
+    perror("wait");
+  }
+  refresh();
+  write(fd[1], "Success", bufflen);
+  close(fd[1]);
+  read(fd[0], msgbuff, bufflen);
+}
+
+void compress_tar(file_info * current_file_info, char * msgbuff){
+  pid_t cpid;
+  int status;
+  int fd[2];
+
+  int bufflen = MSGWIDTH - 2;
+
+  char archive_name[200];
+  if (snprintf(archive_name, 200, "%s.tar.gz", current_file_info->name) >= 200){
+    sprintf(msgbuff, "Filename too long");
+    return;
+  }
+
+  if (pipe(fd) < 0){
+    perror("pipe");
+  }
+  endwin();
+  cpid = fork();
+  if (cpid == 0){ //we are child
+    close(fd[0]);
+    execlp("tar", "tar", "-czvf", archive_name, current_file_info->name, NULL);
+    write(fd[1], strerror(errno), bufflen);
+    //perror("exec");
+    fclose(stdin);
+    exit(127);
+  }
+
+  if (waitpid(cpid, &status, 0) < 0){
+    perror("wait");
+  }
+  refresh();
+  write(fd[1], "Success", bufflen);
+  close(fd[1]);
+  read(fd[0], msgbuff, bufflen);
+}
+
+void extract_tar(file_info * current_file_info, char * msgbuff){
+  pid_t cpid;
+  int status;
+  int fd[2];
+
+  int bufflen = MSGWIDTH - 2;
+
+  if (pipe(fd) < 0){
+    perror("pipe");
+  }
+  endwin();
+  cpid = fork();
+  if (cpid == 0){ //we are child
+    close(fd[0]);
+    execlp("tar", "tar", "-xzvf", current_file_info->name, NULL);
+    write(fd[1], strerror(errno), bufflen);
+    //perror("exec");
+    fclose(stdin);
+    exit(127);
+  }
+
+  if (waitpid(cpid, &status, 0) < 0){
+    perror("wait");
+  }
+  refresh();
+  write(fd[1], "Success", bufflen);
+  close(fd[1]);
+  read(fd[0], msgbuff, bufflen);
 }
