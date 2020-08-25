@@ -1,6 +1,6 @@
 CC=gcc
 
-CFLAGS= -g -Wall -lmenu -lncurses
+CFLAGS= -lmenu -lncurses
 
 PREFIX = /usr/local
 

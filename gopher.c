@@ -32,6 +32,8 @@ int MENUWIDTH = 100;
 #define Y_OFFSET 1
 #define MSGWIDTH MENUWIDTH - 4
 
+int ALLOW_INTERRUPT = 1;
+
 // These aren't really necessary
 int USE_OPTIONS_MENU = 1;
 int IN_OPTIONS_MENU = 0;
@@ -406,14 +408,22 @@ int main() {
 	    copy_args[3] = strdup(dirbuff); // directory to copy/move to
 	    for (item_no = 0; item_no < n_choices; item_no++){
 	      if (!strcmp(&clipboard[i], filelist[item_no]->name)){
+          ALLOW_INTERRUPT = 0;
 		refresh_littlebox("Filename already exists. (r)ename, (o)verwrite, or (a)bort...");
 		while (1){
+      refresh_littlebox("Filename already exists. (r)ename, (o)verwrite, or (a)bort...");
 		  c = getch();
 		  if (c == 'r'){
 		    refresh_littlebox("New Name: ");
 		    echo();
 		    curs_set(1);
-		    getstr(msgbuff);
+		    if (getstr(msgbuff) == ERR){
+          curs_set(0);
+		      noecho();
+          abort = 1;
+          refresh_littlebox("Whoops! Did not copy file");
+          
+        }
 		    curs_set(0);
 		    noecho();
 		    free(copy_args[3]);
@@ -434,6 +444,7 @@ int main() {
 		  } else if (c == 'o'){
 		    break;
 		  }
+      
 		}
 		
 		break;
@@ -463,7 +474,7 @@ int main() {
 	    else
 	      refresh_littlebox("Moving...");
 	    
-	    if (waitpid(cpid, &status, 0) < 0){
+	    while (waitpid(cpid, &status, 0) < 0){
 	      perror("wait");
 	    }
 	    if (!(dfd = opendir(dirbuff))){
@@ -480,6 +491,7 @@ int main() {
 	      refresh_littlebox("File moved");
 	      clipboard[0] = 0;
 	    }
+      ALLOW_INTERRUPT = 1;
 	    break;
 
 	  case KEY_DC: // DELETE
@@ -490,9 +502,11 @@ int main() {
 	      clrtoeol();
 	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
 	      attron(COLOR_PAIR(1));
+        
 	      mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Cannot delete parent directory! (Press any key to continue)", filelist[item_no]->name);
 	      attroff(COLOR_PAIR(1));
 	      getch();
+        
 	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
 	      clrtoeol();
 	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
@@ -505,13 +519,14 @@ int main() {
 	    mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
 	    attron(COLOR_PAIR(1));
 	    //mvprintw(MENUHEIGHT + Y_OFFSET + 3, X_OFFSET + 1, "Are you SURE you wish to delete this file? (y/n)");
+      ALLOW_INTERRUPT = 0;
 	    mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Are you SURE you wish to delete this file? (y/n)");
 	    //refresh_littlebox("Are you SURE you wish to delete this file? (y/n)");
 	    attroff(COLOR_PAIR(1));
 	    do {
 	      c = getch();
 	    } while(c != 'y' && c != 'n');
-	  
+      ALLOW_INTERRUPT = 1;
 	    if (c != 'y') {
 	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
 	      clrtoeol();
@@ -589,11 +604,13 @@ int main() {
 	    break;
 
 	  case 'T':
+      ALLOW_INTERRUPT = 0;
 	    endwin();
 	    open_terminal(dirbuff);
 	    if (!(dfd = opendir(dirbuff))){
 	      fprintf(stderr, "Can't open directory\n");
 	    }
+      ALLOW_INTERRUPT = 1;
 	    n_choices = build_filelist(filelist, dfd);
 	    sortfiles(filelist, n_choices, comp_func);
 	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
@@ -932,11 +949,13 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
 	    curs_set(0);
 	    noecho();
 
+      ALLOW_INTERRUPT = 0;
 	    endwin();
 	    run_prog(current_file_info, prog_name);
 	    keypad(*dir_menu_win, TRUE);
 	    
 	    refresh();
+      ALLOW_INTERRUPT = 1;
 
 	    
 	  }
@@ -1257,7 +1276,7 @@ void run_prog(file_info * current_file_info, char * prog_name){
   }
   
   
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
   write(fd[1], "Success", bufflen);
@@ -1288,7 +1307,11 @@ void rename_file(file_info * current_file_info){
   refresh_littlebox("New Name: ");
   echo();
   curs_set(1);
-  getstr(new_name);
+  if (getstr(new_name) == ERR){
+    curs_set(0);
+    noecho();
+    return;
+  }
   curs_set(0);
   noecho();
   args[3] = new_name;
@@ -1304,7 +1327,7 @@ void rename_file(file_info * current_file_info){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
   write(fd[1], "Success", bufflen);
@@ -1318,10 +1341,18 @@ void rename_file(file_info * current_file_info){
 // Create new directory with mkdir()
 int new_dir(){
   char  dir_name[80];
+  
   refresh_littlebox("Directory Name: ");
   echo();
-  getstr(dir_name);
+  curs_set(1);
+  if (getstr(dir_name) == ERR){
+    return -1;
+    curs_set(0);
+    noecho();
+  }
+  curs_set(0);
   noecho();
+  
   if(mkdir(dir_name, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)){
     return -1;
   }
@@ -1355,7 +1386,7 @@ void file_touch(){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
 }
@@ -1376,6 +1407,8 @@ void open_terminal(char * dirbuff){
     perror("pipe");
   }
   
+  //ALLOW_INTERRUPT = 0;
+
   cpid = fork();
 
   
@@ -1394,9 +1427,10 @@ void open_terminal(char * dirbuff){
   }
   
   
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+  //ALLOW_INTERRUPT = 1;
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], errorbuff, bufflen);
@@ -1406,12 +1440,21 @@ void open_terminal(char * dirbuff){
 // Signal handler for screen resize
 void handle_winch(int sig){
   //fprintf(stderr, "Signal caught\n");
-  DIR * dfd;
   MENUHEIGHT = LINES - 6;
   MENUWIDTH = COLS - 6;
   MENUWIDTH = MENUWIDTH > MENUWIDTH_MAX ? MENUWIDTH_MAX : MENUWIDTH;
   
   MENUHEIGHT = MENUHEIGHT > MENUHEIGHT_MAX ? MENUHEIGHT_MAX : MENUHEIGHT;
+  if (!ALLOW_INTERRUPT) return;
+
+  DIR * dfd;
+  /*
+  MENUHEIGHT = LINES - 6;
+  MENUWIDTH = COLS - 6;
+  MENUWIDTH = MENUWIDTH > MENUWIDTH_MAX ? MENUWIDTH_MAX : MENUWIDTH;
+  
+  MENUHEIGHT = MENUHEIGHT > MENUHEIGHT_MAX ? MENUHEIGHT_MAX : MENUHEIGHT;
+  */
   endwin();
   refresh();
   if (!(dfd = opendir(sig_dirbuff))){
@@ -1424,15 +1467,25 @@ void handle_winch(int sig){
 
 // Exec a given command
 void executecommand(char * msgbuff){
+  ALLOW_INTERRUPT = 0;
   char command[200];
   refresh_littlebox("Execute Command: ");
   echo();
   curs_set(1);
-  getstr(command);
+  if (getstr(command) == ERR){
+    
+    refresh_littlebox("Whoops! Try again.");
+    sleep(1);
+    strcpy(msgbuff, "Whoops! Try again.");
+    curs_set(0);
+    noecho();
+    ALLOW_INTERRUPT = 1;
+    return;
+  }
   curs_set(0);
   noecho();
 
-
+  
   int status;
   pid_t cpid;;
   int fd[2];
@@ -1465,7 +1518,7 @@ void executecommand(char * msgbuff){
   }
   
   
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
   printf("=================================================\n");
@@ -1478,8 +1531,9 @@ void executecommand(char * msgbuff){
   close(fd[1]);
   
   read(fd[0], msgbuff, bufflen);
-
+  
   refresh();
+  ALLOW_INTERRUPT = 1;
 
 }
 
@@ -1499,6 +1553,7 @@ void zip(file_info * current_file_info, char * msgbuff){
   if (pipe(fd) < 0){
     perror("pipe");
   }
+  ALLOW_INTERRUPT = 0;
   endwin();
   cpid = fork();
   if (cpid == 0){ //we are child
@@ -1510,9 +1565,10 @@ void zip(file_info * current_file_info, char * msgbuff){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+  ALLOW_INTERRUPT = 1;
   refresh();
   write(fd[1], "Success", bufflen);
   close(fd[1]);
@@ -1530,6 +1586,7 @@ void unzip(file_info * current_file_info, char * msgbuff){
   if (pipe(fd) < 0){
     perror("pipe");
   }
+  ALLOW_INTERRUPT = 0;
   endwin();
   cpid = fork();
   if (cpid == 0){ //we are child
@@ -1541,13 +1598,15 @@ void unzip(file_info * current_file_info, char * msgbuff){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+  
   refresh();
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], msgbuff, bufflen);
+  ALLOW_INTERRUPT = 1;
 }
 
 void compress_tar(file_info * current_file_info, char * msgbuff){
@@ -1566,6 +1625,7 @@ void compress_tar(file_info * current_file_info, char * msgbuff){
   if (pipe(fd) < 0){
     perror("pipe");
   }
+  ALLOW_INTERRUPT = 0;
   endwin();
   cpid = fork();
   if (cpid == 0){ //we are child
@@ -1577,13 +1637,15 @@ void compress_tar(file_info * current_file_info, char * msgbuff){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+  
   refresh();
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], msgbuff, bufflen);
+  ALLOW_INTERRUPT = 1;
 }
 
 void extract_tar(file_info * current_file_info, char * msgbuff){
@@ -1596,6 +1658,7 @@ void extract_tar(file_info * current_file_info, char * msgbuff){
   if (pipe(fd) < 0){
     perror("pipe");
   }
+  ALLOW_INTERRUPT = 0;
   endwin();
   cpid = fork();
   if (cpid == 0){ //we are child
@@ -1607,11 +1670,13 @@ void extract_tar(file_info * current_file_info, char * msgbuff){
     exit(127);
   }
 
-  if (waitpid(cpid, &status, 0) < 0){
+  while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+  
   refresh();
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], msgbuff, bufflen);
+  ALLOW_INTERRUPT = 1;
 }
