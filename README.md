@@ -5,13 +5,14 @@ Terminal Based File Explorer w/ Ncurses
 
 ### DEPENDENCIES:
 
-This program requires the ncurses library.
+This program requires the ncurses library,\\
+and also zip & unzip for .zip files.
 
-To install on Ubuntu: 
+To install ncurses on Ubuntu: 
 ```
 sudo apt-get install libncurses5-dev libncursesw5-dev
 ```
-To install on Arch/Manjaro: 
+To install ncurses on Arch/Manjaro: 
 ```
 sudo pacman -S ncurses
 ```
