@@ -1251,13 +1251,23 @@ void refresh_littlebox(char * msg){
 // Attempt to open file with a given program name
 void run_prog(file_info * current_file_info, char * prog_name){
   int status;
-  pid_t cpid;;
+  pid_t cpid;
 
+  char * argstring = malloc(strlen(prog_name) + strlen(current_file_info->name) + 2);
+  strcpy(argstring, prog_name);
+  strcpy(&argstring[strlen(prog_name) + 1], current_file_info->name);
+  
+
+  int arg_count;
+  char ** args = arg_parse(argstring, &arg_count);
+  
+
+/*
   char * args[3];
   args[0] = prog_name;
   args[1] = current_file_info->name;
   args[2] = NULL;
-
+*/
   int fd[2];
   int bufflen = 80;
   char errorbuff[bufflen];
@@ -1279,6 +1289,9 @@ void run_prog(file_info * current_file_info, char * prog_name){
   while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
+
+  free(args);
+  free(argstring);
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], errorbuff, bufflen);
