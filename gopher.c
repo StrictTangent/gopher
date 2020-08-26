@@ -59,7 +59,8 @@ enum compressors {ZIP = 2000,
 
 void print_in_middle(WINDOW *win, int starty, int startx, int width, char *string, chtype color);
 void sortfiles(file_info ** filelist, int count, int (*func)(const void * ptr1, const void * ptr2));
-void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU ** dir_menu, WINDOW ** dir_menu_win, char * dirbuff);
+//void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU ** dir_menu, WINDOW ** dir_menu_win, char * dirbuff);
+void refresh_menu();
 int filecomp_size(const void * ptr1, const void * ptr2);
 int filecomp_name_desc(const void * ptr1, const void * ptr2);
 int filecomp_size_desc(const void * ptr1, const void * ptr2);
@@ -84,18 +85,27 @@ void unzip(file_info * current_file_info, char * msgbuff);
 void extract_tar(file_info * current_file_info, char * msgbuff);
 void zip(file_info * current_file_info, char * msgbuff);
 void compress_tar(file_info * current_file_info, char * msgbuff);
+void refresh_filelist();
 
 char  ** arg_parse (char *line, int *argcptr);
 
-// Global pointer copies for use by signal handler "handle_winch"
-// (Consider Just making the originals global...)
-file_info ** sig_filelist;
-ITEM ** sig_menu_items;
-int * sig_nchoices;
-MENU ** sig_dir_menu;
-WINDOW ** sig_dir_menu_win;
-char * sig_dirbuff;
 
+// Structure for current state of program
+typedef struct {
+  file_info ** filelist;
+  char current_dir[MAXLEN];
+  char msgbuff[MAXLEN];
+  char clipboard[MAXLEN];
+  int n_choices;
+
+  MENU * dir_menu;
+  ITEM ** menu_items;
+  WINDOW * dir_menu_win;
+
+
+} run_state_type;
+
+run_state_type run_state;
 
 // Function Pointer for current comparator.
 // Kept global for use by handle_winch
@@ -103,16 +113,18 @@ int (*comp_func)(const void *, const void *);
 
 
 int main() {
-  ITEM ** menu_items;
-  if ((menu_items = calloc(MAXITEMS, sizeof(ITEM *))) == NULL){
+
+  
+
+  //ITEM ** menu_items;
+  if ((run_state.menu_items = calloc(MAXITEMS, sizeof(ITEM *))) == NULL){
     perror("calloc");
     exit(errno);
   } 
 
   int c, opt_ret;
-  MENU * dir_menu = NULL;
-  WINDOW * dir_menu_win;
-  int n_choices, i;
+  run_state.dir_menu = NULL;
+  int i;
 
   //optionsmenu
   MENU * opt_menu = NULL;
@@ -137,29 +149,17 @@ int main() {
   init_pair(2, COLOR_CYAN, COLOR_BLACK);
   init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
 
-   
-
-  char msgbuff[MSGWIDTH - 2];
-  sprintf(&msgbuff[MSGWIDTH -6], "...");
-  
-  char dirbuff[MAXLEN];
-  getcwd(dirbuff, MAXLEN);
+  getcwd(run_state.current_dir, MAXLEN);
   int item_no;
-  DIR * dfd;
+  
   pid_t cpid;
   int status;
 
-  if (!(dfd = opendir(dirbuff))){
-    fprintf(stderr, "Can't open directory\n");
-  }
-  file_info ** filelist;
-  if ((filelist= calloc(MAXITEMS, sizeof(file_info *))) == NULL){
-    perror("calloc");
-    exit(errno);
-  }
   
-  char clipboard[MAXLEN];
-  clipboard[0] = 0;
+
+  run_state.filelist = calloc(1,sizeof(file_info *));
+  run_state.clipboard[0] = 0;
+
   char * copy_args[5];
   copy_args[0] = "cp";
   copy_args[1] = "-r";
@@ -188,13 +188,6 @@ int main() {
   memset(&sa, 0, sizeof(struct sigaction));
   sa.sa_handler = handle_winch;
   sigaction(SIGWINCH, &sa, NULL);
-  
-  sig_filelist = filelist;
-  sig_menu_items = menu_items;
-  sig_nchoices = &n_choices;
-  sig_dir_menu = &dir_menu;
-  sig_dir_menu_win = &dir_menu_win;
-  sig_dirbuff = dirbuff;
   //End signal handler setup
   
   while(1){
@@ -206,18 +199,21 @@ int main() {
     
     CHANGEDIR= 0;
 
-    n_choices = build_filelist(filelist, dfd);
-    sortfiles(filelist, n_choices, comp_func);
-    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+    refresh_filelist();
+    sortfiles(run_state.filelist, run_state.n_choices, comp_func);
+    refresh_menu();
 
 
     // HANDLE KEYBOARD INPUT
     opt_ret = -1;
-    //c = wgetch(dir_menu_win);
     c = -1;
     while(c != KEY_F(1)){
+
+      //refresh_filelist();;
+      //refresh_menu();
+
       opt_ret = -1;
-      if (c == -1) c = wgetch(dir_menu_win);
+      if (c == -1) c = wgetch(run_state.dir_menu_win);
       if (c == KEY_F(1)) break;
       
       //fprintf(stderr, "KEY PRESS IS %d\n", c);
@@ -225,61 +221,55 @@ int main() {
       int abort = 0;
       // a - z => go to next item starting with that letter
       if (c >= 'a' && c <= 'z'){
-	      set_current_item(dir_menu, get_lettered_item(menu_items, current_item(dir_menu), n_choices, c));
+	      set_current_item(run_state.dir_menu, get_lettered_item(run_state.menu_items, current_item(run_state.dir_menu), run_state.n_choices, c));
 
       } else {
 	switch(c)
 	  {
 	  case KEY_DOWN:
-	    if (item_index(current_item(dir_menu)) == n_choices - 1){
-	      menu_driver(dir_menu, REQ_FIRST_ITEM);
+	    if (item_index(current_item(run_state.dir_menu)) == run_state.n_choices - 1){
+	      menu_driver(run_state.dir_menu, REQ_FIRST_ITEM);
 	    } else {
-	      menu_driver(dir_menu, REQ_DOWN_ITEM);
+	      menu_driver(run_state.dir_menu, REQ_DOWN_ITEM);
 	    }
-	    //menu_driver(dir_menu, REQ_DOWN_ITEM);
-	    refresh_littlebox(filelist[item_index(current_item(dir_menu))]->name);
+      strcpy(run_state.msgbuff, run_state.filelist[item_index(current_item(run_state.dir_menu))]->name);
+	    refresh_littlebox(run_state.msgbuff);
 	    break;
 	  case KEY_UP:
-	    if (item_index(current_item(dir_menu)) == 0){
-	      menu_driver(dir_menu, REQ_LAST_ITEM);
+	    if (item_index(current_item(run_state.dir_menu)) == 0){
+	      menu_driver(run_state.dir_menu, REQ_LAST_ITEM);
 	    } else {
-	      menu_driver(dir_menu, REQ_UP_ITEM);
+	      menu_driver(run_state.dir_menu, REQ_UP_ITEM);
 	    }
-	    //menu_driver(dir_menu, REQ_UP_ITEM);
-	    refresh_littlebox(filelist[item_index(current_item(dir_menu))]->name);
+	    strcpy(run_state.msgbuff, run_state.filelist[item_index(current_item(run_state.dir_menu))]->name);
+	    refresh_littlebox(run_state.msgbuff);
 
 	    break;
 	  case KEY_NPAGE:
-	    menu_driver(dir_menu, REQ_SCR_DPAGE);
+	    menu_driver(run_state.dir_menu, REQ_SCR_DPAGE);
 	    break;
 	  case KEY_PPAGE:
-	    menu_driver(dir_menu, REQ_SCR_UPAGE);
+	    menu_driver(run_state.dir_menu, REQ_SCR_UPAGE);
 	    break;
 
 
 	    ////////////ENTER////////////////////////////////////////////////
 	  case 10:
-	    curr = current_item(dir_menu);
+	    curr = current_item(run_state.dir_menu);
 	    item_no = item_index(curr);
 	    if (item_no > 0){
-	      //curr = current_item(dir_menu);
-	      //item_no = item_index(curr);
-	      
-	      opt_ret = present_options(&dir_menu_win, &opt_menu, &opt_menu_win, opt_items, filelist[item_no], item_no);
+     
+	      opt_ret = present_options(&run_state.dir_menu_win, &opt_menu, &opt_menu_win, opt_items, run_state.filelist[item_no], item_no);
 	      break;
 
 
 	    } else {
-	      //curr = current_item(dir_menu);
-	      //item_no = item_index(curr);
-	      if (S_ISDIR(filelist[item_no]->st_mode)){
-		chdir(filelist[item_no]->name);
-		getcwd(dirbuff, MAXLEN);
-		if (!(dfd = opendir(dirbuff))){
-		  fprintf(stderr, "Can't open directory\n");
-		} else {
-		  CHANGEDIR = 1;
-		}
+
+	      if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
+		chdir(run_state.filelist[item_no]->name);
+		getcwd(run_state.current_dir, MAXLEN);
+    CHANGEDIR = 1;
+		
 	      }
 	      break;
 	    }
@@ -287,127 +277,110 @@ int main() {
 	    /////////////////////////////////////////////////////////////////////////////
 
 	  case KEY_RIGHT:
-	    curr = current_item(dir_menu);
+	    curr = current_item(run_state.dir_menu);
 	      item_no = item_index(curr);
-	      if (S_ISDIR(filelist[item_no]->st_mode)){
-		chdir(filelist[item_no]->name);
-		getcwd(dirbuff, MAXLEN);
-		if (!(dfd = opendir(dirbuff))){
-		  fprintf(stderr, "Can't open directory\n");
-		} else {
-		  CHANGEDIR = 1;
-		}
+	      if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
+		chdir(run_state.filelist[item_no]->name);
+		getcwd(run_state.current_dir, MAXLEN);
+		CHANGEDIR = 1;
 	      }
 	      break;
 	    
 	  case KEY_LEFT:
 	  
 	    item_no = 0;
-	    if (S_ISDIR(filelist[item_no]->st_mode)){
-	      chdir(filelist[item_no]->name);
-	      getcwd(dirbuff, MAXLEN);
-	      if (!(dfd = opendir(dirbuff))){
-		fprintf(stderr, "Can't open directory\n");
-	      } else {
-		CHANGEDIR = 1;
-	      }
+	    if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
+	      chdir(run_state.filelist[item_no]->name);
+	      getcwd(run_state.current_dir, MAXLEN);
+	      CHANGEDIR = 1;
 	    }
 	    break;
 
 	  case 'S': //'=':
-
 	    comp_func = comp_func == &filecomp_size ? &filecomp_size_desc : &filecomp_size;
-	    
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    refresh_menu();
 	    break;
 
 	  case 'A': //'-':
-	    
 	    comp_func = comp_func == &filecomp_name ? &filecomp_name_desc : &filecomp_name;
-
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    refresh_menu();
 	    break;
 
 	  case 'D':
-
 	    comp_func = comp_func == &filecomp_date ? &filecomp_date_desc : &filecomp_date;
-
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    refresh_menu();
 	    break;
 
 	  case 'C': //shift + c COPY
 	    
-	    item_no = item_index(current_item(dir_menu));
+	    item_no = item_index(current_item(run_state.dir_menu));
 	    if (item_no == 0) break;
-	    if (strlen(dirbuff) + strlen(filelist[item_no]->name) + 2 < MAXLEN){
+	    if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
 	      
-	      if (snprintf(clipboard, MAXLEN, "%s/%s", dirbuff, filelist[item_no]->name) >= MAXLEN){
+	      if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
 		refresh_littlebox("Unable to copy file...");
-		clipboard[0] = 0;
+		run_state.clipboard[0] = 0;
 		break;
 	      }
 	      copy_args[0] = "cp";
 	      copy_args[1] = "-rf";
 	      if (copy_args[2]) free(copy_args[2]);
 	      if (copy_args[3]) free(copy_args[3]);
-	      copy_args[2] = strdup(clipboard);
+	      copy_args[2] = strdup(run_state.clipboard);
 	      
-	      if (snprintf(msgbuff, MSGWIDTH - 2, "Copied to Clipboard: %s", clipboard) > MSGWIDTH -2){
+	      if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Copied to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
 		// Do nothing
 	      }
 	      
-	      if (strlen(msgbuff) >= MSGWIDTH - 3) sprintf(&msgbuff[MSGWIDTH -6], "...");
+	      if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");
 	      
-	      refresh_littlebox(msgbuff);
+	      refresh_littlebox(run_state.msgbuff);
 
 	    }
 	    break;
 
 	  case 'X':
-	    item_no = item_index(current_item(dir_menu));
+	    item_no = item_index(current_item(run_state.dir_menu));
 	    if (item_no == 0) break;
-	    if (strlen(dirbuff) + strlen(filelist[item_no]->name) + 2 < MAXLEN){
+	    if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
 	      
-	      if (snprintf(clipboard, MAXLEN, "%s/%s", dirbuff, filelist[item_no]->name) >= MAXLEN){
+	      if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
 		refresh_littlebox("Unable to move file...");
-		clipboard[0] = 0;
+		run_state.clipboard[0] = 0;
 		break;
 	      }
 	      copy_args[0] = "mv";
 	      copy_args[1] = "-f";
 	      if (copy_args[2]) free(copy_args[2]);
 	      if (copy_args[3]) free(copy_args[3]);
-	      copy_args[2] = strdup(clipboard);
+	      copy_args[2] = strdup(run_state.clipboard);
 	      
-	      if (snprintf(msgbuff, MSGWIDTH - 2, "Moved to Clipboard: %s", clipboard) > MSGWIDTH -2){
+	      if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Moved to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
 		// Do nothing
 	      }
 	      
-	      if (strlen(msgbuff) >= MSGWIDTH - 3) sprintf(&msgbuff[MSGWIDTH -6], "...");
+	      if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");
 	      
-	      refresh_littlebox(msgbuff);
+	      refresh_littlebox(run_state.msgbuff);
 
 	    }
 	    break;
 	    
 	  case 'V': //shift + v PASTE
 
-	    if (clipboard[0] == 0) break;
+	    if (run_state.clipboard[0] == 0) break;
 
 	    //find filename of file to be copied
-	    i = strlen(clipboard) - 1;
-	    while (clipboard[i] != '/'){
+	    i = strlen(run_state.clipboard) - 1;
+	    while (run_state.clipboard[i] != '/'){
 	      i--;
 	    }
 	    i++;
-	    fprintf(stderr, "name to copy is: %s\n", &clipboard[i]);
+	    fprintf(stderr, "name to copy is: %s\n", &run_state.clipboard[i]);
 
-	    copy_args[3] = strdup(dirbuff); // directory to copy/move to
-	    for (item_no = 0; item_no < n_choices; item_no++){
-	      if (!strcmp(&clipboard[i], filelist[item_no]->name)){
+	    copy_args[3] = strdup(run_state.current_dir); // directory to copy/move to
+	    for (item_no = 0; item_no < run_state.n_choices; item_no++){
+	      if (!strcmp(&run_state.clipboard[i], run_state.filelist[item_no]->name)){
           ALLOW_INTERRUPT = 0;
 		refresh_littlebox("Filename already exists. (r)ename, (o)verwrite, or (a)bort...");
 		while (1){
@@ -417,7 +390,7 @@ int main() {
 		    refresh_littlebox("New Name: ");
 		    echo();
 		    curs_set(1);
-		    if (getstr(msgbuff) == ERR){
+		    if (getstr(run_state.msgbuff) == ERR){
           curs_set(0);
 		      noecho();
           abort = 1;
@@ -427,14 +400,14 @@ int main() {
 		    curs_set(0);
 		    noecho();
 		    free(copy_args[3]);
-		    for (item_no = 0; item_no < n_choices; item_no++){
-		      if (!strcmp(msgbuff, filelist[item_no]->name)) {
+		    for (item_no = 0; item_no < run_state.n_choices; item_no++){
+		      if (!strcmp(run_state.msgbuff, run_state.filelist[item_no]->name)) {
 			refresh_littlebox("That name already exists. Failed to write file");
 			abort = 1;
 			break;
 		      }
 		    }
-		    copy_args[3] = strdup(msgbuff);
+		    copy_args[3] = strdup(run_state.msgbuff);
 		    break;
 		  } else if (c == 'a'){
 		    refresh_littlebox("Did not copy file");
@@ -455,7 +428,6 @@ int main() {
 	      copy_args[3] = NULL;
 	      break;
 	    }
-	    //copy_args[3] = strdup(dirbuff); // directory to copy/move to
 	    
 	    cpid = fork();
       
@@ -477,33 +449,30 @@ int main() {
 	    while (waitpid(cpid, &status, 0) < 0){
 	      perror("wait");
 	    }
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
 	    
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    
+      refresh_filelist();
+	    refresh_menu();
 	    
 	    if (copy_args[0][0] == 'c') {
 	      refresh_littlebox("File copied");
 	    } else {
 	      refresh_littlebox("File moved");
-	      clipboard[0] = 0;
+	      run_state.clipboard[0] = 0;
 	    }
       ALLOW_INTERRUPT = 1;
 	    break;
 
 	  case KEY_DC: // DELETE
-	    item_no = item_index(current_item(dir_menu));
+	    item_no = item_index(current_item(run_state.dir_menu));
 	    
-	    if (!strcmp(filelist[item_no]->name, "..")){
+	    if (!strcmp(run_state.filelist[item_no]->name, "..")){
 	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
 	      clrtoeol();
 	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
 	      attron(COLOR_PAIR(1));
         
-	      mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Cannot delete parent directory! (Press any key to continue)", filelist[item_no]->name);
+	      mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Cannot delete parent directory! (Press any key to continue)", run_state.filelist[item_no]->name);
 	      attroff(COLOR_PAIR(1));
 	      getch();
         
@@ -518,10 +487,8 @@ int main() {
 	    clrtoeol();
 	    mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
 	    attron(COLOR_PAIR(1));
-	    //mvprintw(MENUHEIGHT + Y_OFFSET + 3, X_OFFSET + 1, "Are you SURE you wish to delete this file? (y/n)");
       ALLOW_INTERRUPT = 0;
 	    mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Are you SURE you wish to delete this file? (y/n)");
-	    //refresh_littlebox("Are you SURE you wish to delete this file? (y/n)");
 	    attroff(COLOR_PAIR(1));
 	    do {
 	      c = getch();
@@ -539,13 +506,12 @@ int main() {
 	    mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
 	    refresh();
 	    
-	    del_args[2] = strdup(filelist[item_no]->name);
+	    del_args[2] = strdup(run_state.filelist[item_no]->name);
 	    
 	    cpid = fork();
       
 	    if (cpid == 0){ //we are child
 	      execvp(del_args[0], del_args);
-	      //execvp(copy_args[0], copy_args);
 
 	      perror("exec");
 	      fclose(stdin);
@@ -556,121 +522,82 @@ int main() {
 	      perror("wait");
 	    }
 	    free(del_args[2]);
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-	    set_current_item(dir_menu, menu_items[item_no]);
+	    
+	    refresh_filelist();
+	    refresh_menu();
+	    set_current_item(run_state.dir_menu, run_state.menu_items[item_no]);
 	    break;
 
 
 	  case 'R':
-	    rename_file(filelist[item_index(current_item(dir_menu))]);
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    rename_file(run_state.filelist[item_index(current_item(run_state.dir_menu))]);
+	    refresh_filelist();
+	    refresh_menu();
 	    break;
 
 
 	  case 'M':
 	    if (new_dir()){
-	      strcpy(msgbuff, strerror(errno));
+	      strcpy(run_state.msgbuff, strerror(errno));
 	    } else {
-	      strcpy(msgbuff, "Success");
+	      strcpy(run_state.msgbuff, "Success");
 	    }
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-	    refresh_littlebox(msgbuff);
+	    refresh_filelist();
+	    refresh_menu();
+	    refresh_littlebox(run_state.msgbuff);
 	    break;
 
 
 	  case 'N':
 	    file_touch();
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    refresh_filelist();
+	    refresh_menu();
 	    break;
 
 	  case 'T':
       ALLOW_INTERRUPT = 0;
 	    endwin();
-	    open_terminal(dirbuff);
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
+	    open_terminal(run_state.current_dir);
       ALLOW_INTERRUPT = 1;
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
+	    refresh_filelist();
+	    refresh_menu();
 	    refresh();
 	    break;
 
 	  case 'E':
-	    executecommand(msgbuff);
-	    if (!(dfd = opendir(dirbuff))){
-	      fprintf(stderr, "Can't open directory\n");
-	    }
-	    n_choices = build_filelist(filelist, dfd);
-	    sortfiles(filelist, n_choices, comp_func);
-	    refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-      refresh_littlebox(msgbuff);
+	    executecommand(run_state.msgbuff);
+	    refresh_filelist();
+	    refresh_menu();
+      refresh_littlebox(run_state.msgbuff);
 	    break;
 
       case UNZIP:
       
-        unzip(filelist[item_index(current_item(dir_menu))], msgbuff);
-        if (!(dfd = opendir(dirbuff))){
-	        fprintf(stderr, "Can't open directory\n");
-	      }
-	      n_choices = build_filelist(filelist, dfd);
-	      sortfiles(filelist, n_choices, comp_func);
-	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-        refresh_littlebox(msgbuff);
+        unzip(run_state.filelist[item_index(current_item(run_state.dir_menu))], run_state.msgbuff);
+	      refresh_filelist();
+	      refresh_menu();
+        refresh_littlebox(run_state.msgbuff);
         break;
 
         case UNTAR:
-        extract_tar(filelist[item_index(current_item(dir_menu))], msgbuff);
-        if (!(dfd = opendir(dirbuff))){
-	        fprintf(stderr, "Can't open directory\n");
-	      }
-	      n_choices = build_filelist(filelist, dfd);
-	      sortfiles(filelist, n_choices, comp_func);
-	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-        refresh_littlebox(msgbuff);
+        extract_tar(run_state.filelist[item_index(current_item(run_state.dir_menu))], run_state.msgbuff);
+	      refresh_filelist();
+	      refresh_menu();
+        refresh_littlebox(run_state.msgbuff);
         break;
 
       case ZIP:
-        zip(filelist[item_index(current_item(dir_menu))], msgbuff);
-        if (!(dfd = opendir(dirbuff))){
-	        fprintf(stderr, "Can't open directory\n");
-	      }
-	      n_choices = build_filelist(filelist, dfd);
-	      sortfiles(filelist, n_choices, comp_func);
-	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-        refresh_littlebox(msgbuff);
+        zip(run_state.filelist[item_index(current_item(run_state.dir_menu))], run_state.msgbuff);
+	      refresh_filelist();
+	      refresh_menu();
+        refresh_littlebox(run_state.msgbuff);
         break;
 
       case TAR:
-        compress_tar(filelist[item_index(current_item(dir_menu))], msgbuff);
-        if (!(dfd = opendir(dirbuff))){
-	        fprintf(stderr, "Can't open directory\n");
-	      }
-	      n_choices = build_filelist(filelist, dfd);
-	      sortfiles(filelist, n_choices, comp_func);
-	      refresh_menu(filelist, menu_items, n_choices, &dir_menu, &dir_menu_win, dirbuff);
-        refresh_littlebox(msgbuff);
+        compress_tar(run_state.filelist[item_index(current_item(run_state.dir_menu))], run_state.msgbuff);
+	      refresh_filelist();
+	      refresh_menu();
+        refresh_littlebox(run_state.msgbuff);
         break;
 	  }
 
@@ -687,7 +614,7 @@ int main() {
       } else {
 	c = -1;
       }
-      wrefresh(dir_menu_win);
+      wrefresh(run_state.dir_menu_win);
     }
 
     if(!CHANGEDIR) break;
@@ -695,15 +622,15 @@ int main() {
 			 
   }
   //CLEANUP
-  unpost_menu(dir_menu);
-  free_menu(dir_menu);
-  dir_menu = NULL;
+  unpost_menu(run_state.dir_menu);
+  free_menu(run_state.dir_menu);
+  run_state.dir_menu = NULL;
   for(i = 0; i < MAXITEMS; i++){
-    free_item(menu_items[i]);
+    free_item(run_state.menu_items[i]);
   }
-  free(menu_items);
+  free(run_state.menu_items);
   free(opt_items);
-  destroy_filelist(filelist);
+  destroy_filelist(run_state.filelist);
   if (copy_args[2]) free(copy_args[2]);
   if (copy_args[3]) free(copy_args[3]);
   
@@ -711,28 +638,6 @@ int main() {
   return 0;
 }
 
-void print_in_middle(WINDOW *win, int starty, int startx, int width, char *string, chtype color)
-{	int length, x, y;
-	float temp;
-
-	if(win == NULL)
-		win = stdscr;
-	getyx(win, y, x);
-	if(startx != 0)
-		x = startx;
-	if(starty != 0)
-		y = starty;
-	if(width == 0)
-		width = 80;
-
-	length = strlen(string);
-	temp = (width - length)/ 2;
-	x = startx + (int)temp;
-	wattron(win, color);
-	mvwprintw(win, y, x, "%s", string);
-	wattroff(win, color);
-	refresh();
-}
 
 // Comparator - Sort by filename ascending
 int filecomp_name(const void * ptr1, const void * ptr2){
@@ -1007,18 +912,30 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
 }
 
 // Refreshes the main menu using the contents of filelist
-void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU ** dir_menu, WINDOW ** dir_menu_win, char * dirbuff){
+void refresh_menu(){
+
+  sortfiles(run_state.filelist, run_state.n_choices, comp_func);
   int i = 0;
+
+  file_info ** filelist = run_state.filelist;
+  MENU ** dir_menu = &run_state.dir_menu;
+  ITEM ** menu_items = run_state.menu_items;
+  WINDOW ** dir_menu_win = &run_state.dir_menu_win;
+  char * dirbuff = run_state.current_dir;
+  int n_choices = run_state.n_choices;
+
 
   if(*dir_menu){
     unpost_menu(*dir_menu);
     free_menu(*dir_menu);
   }
+  
   while (menu_items[i] != NULL && i < MAXITEMS){
     free_item(menu_items[i]);
     menu_items[i] = NULL;
     i++;
   }
+
 
   for(i = 0; i < n_choices; i++){
     menu_items[i] = new_item(filelist[i]->name_short, filelist[i]->description);
@@ -1034,25 +951,16 @@ void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU 
   
   // Set main window and subwindow
   set_menu_win(*dir_menu, *dir_menu_win);
-  set_menu_sub(*dir_menu, derwin(*dir_menu_win, MENUHEIGHT - 4, MENUWIDTH - 2, Y_OFFSET + 2/*3*/, X_OFFSET - 3/*1*/));
-  //set_menu_sub(*dir_menu, derwin(*dir_menu_win, MENUHEIGHT - Y_OFFSET, MENUWIDTH - 2, Y_OFFSET - 1/*3*/, X_OFFSET - 3/*1*/));
+  set_menu_sub(*dir_menu, derwin(*dir_menu_win, MENUHEIGHT - 4, MENUWIDTH - 2, Y_OFFSET + 2, X_OFFSET - 3));
   set_menu_format(*dir_menu, MENUHEIGHT - 4, 1);
-  //set_menu_format(*dir_menu, MENUHEIGHT - Y_OFFSET, 1);
-  
-  //set_menu_mark(dir_menu, " * ");
+
   set_menu_mark(*dir_menu, "-> ");
   
   // border and title
   box(*dir_menu_win, 0,0 );
-  //print_in_middle(dir_menu_win, 1, 0, MENUWIDTH, dirbuff, COLOR_PAIR(1));
-  
-  //wattron(*dir_menu_win, COLOR_PAIR(1));
   mvwprintw(*dir_menu_win, 1, 4, "%s", dirbuff);
   mvwprintw(*dir_menu_win, 0, MENUWIDTH - 8, "Gopher");
   
-  //wattroff(*dir_menu_win, COLOR_PAIR(2));
-
-
   clear();
   refresh();
   
@@ -1074,19 +982,6 @@ void refresh_menu(file_info ** filelist, ITEM** menu_items, int n_choices, MENU 
   post_menu(*dir_menu);
   wrefresh(*dir_menu_win);
 
-  /*
-  attron(COLOR_PAIR(2));
-  mvprintw(LINES - 9, 0, "SHIFT + A: Sort by file name");
-  mvprintw(LINES - 8, 0, "SHIFT + S: Sort by file size");
-  mvprintw(LINES - 7, 0, "SHIFT + D: Sort by modified date");
-  mvprintw(LINES - 6, 0, "SHIFT + C: Copy file to clipboard");
-  mvprintw(LINES - 5, 0, "SHIFT + V: Paste file in current directory");
-  mvprintw(LINES - 4, 0, "DELETE   : Delete file");
-  
-  mvprintw(LINES - 2, 0, "Use PageUp and PageDown to scoll down or up a page of items");
-  mvprintw(LINES - 1, 0, "Arrow Keys to navigate (F1 to Exit)");
-  attroff(COLOR_PAIR(2));
-  */
   refresh();
   
 }
@@ -1139,21 +1034,37 @@ ITEM * get_lettered_item(ITEM ** menu_items, ITEM * current, int num_items, char
 }
 
 // Refreshes the filelist for given directory
-int build_filelist(file_info ** filelist, DIR * dfd){
+void refresh_filelist(){
   struct dirent * dp;
   struct stat stbuf;
+  int file_count = 0;
+  DIR * dfd;
+
   // Build array of file info and the menu
-  clear_filelist(filelist);
+  destroy_filelist(run_state.filelist);
   int item_no = 1;
   int last_item_no = 1;
   int i;
 
   int SHORTWIDTH = 21;
-  //45
   SHORTWIDTH = MENUWIDTH - 55;
   SHORTWIDTH = SHORTWIDTH < 8 ? 8 : SHORTWIDTH;
   
   
+  if (!(dfd = opendir(run_state.current_dir))){
+	      fprintf(stderr, "Can't open directory\n");
+  }
+  while (readdir(dfd)){
+    file_count++;
+  }
+  closedir(dfd);
+
+  run_state.filelist = calloc(file_count, sizeof(file_info *));
+
+
+  if (!(dfd = opendir(run_state.current_dir))){
+	      fprintf(stderr, "Can't open directory\n");
+  }
   while ((dp = readdir(dfd))) {
     if (strcmp(dp->d_name, ".")){
       if (!strcmp(dp->d_name, "..")){
@@ -1163,37 +1074,37 @@ int build_filelist(file_info ** filelist, DIR * dfd){
       
       stat(dp->d_name, &stbuf);
       int namelen = strlen(dp->d_name);
-      if ((filelist[item_no] = calloc(1, sizeof(file_info))) == NULL){
+      if ((run_state.filelist[item_no] = calloc(1, sizeof(file_info))) == NULL){
         perror("calloc");
         exit(errno);
       }
-      if ((filelist[item_no]->size = (char *) malloc(50)) == NULL){
+      if ((run_state.filelist[item_no]->size = (char *) malloc(50)) == NULL){
         perror("malloc");
         exit(errno);
       }
-      if ((filelist[item_no]->name = (char *) malloc(namelen + 1)) == NULL){
+      if ((run_state.filelist[item_no]->name = (char *) malloc(namelen + 1)) == NULL){
         perror("malloc");
         exit(errno);
       }
      
-      if ((filelist[item_no]->type = (char *) malloc(10))== NULL){
+      if ((run_state.filelist[item_no]->type = (char *) malloc(10))== NULL){
         perror("malloc");
         exit(errno);
       }
 
-      if ((filelist[item_no]->description = (char *) calloc(100, 1)) == NULL){
+      if ((run_state.filelist[item_no]->description = (char *) calloc(100, 1)) == NULL){
         perror("calloc");
         exit(errno);
       }
 
-      filelist[item_no]->mod_date = (ctime(&stbuf.st_mtim.tv_sec));
-      filelist[item_no]->mod_time = stbuf.st_mtim.tv_sec;
+      run_state.filelist[item_no]->mod_date = (ctime(&stbuf.st_mtim.tv_sec));
+      run_state.filelist[item_no]->mod_time = stbuf.st_mtim.tv_sec;
       
-      memcpy(filelist[item_no]->name, dp->d_name, namelen + 1);
-      filelist[item_no]->name_short = strndup(dp->d_name, SHORTWIDTH);
+      memcpy(run_state.filelist[item_no]->name, dp->d_name, namelen + 1);
+      run_state.filelist[item_no]->name_short = strndup(dp->d_name, SHORTWIDTH);
       
       if(namelen > SHORTWIDTH - 1){
-	char * temp = &filelist[item_no]->name_short[SHORTWIDTH - 3];
+	char * temp = &run_state.filelist[item_no]->name_short[SHORTWIDTH - 3];
 	
 	if (dp->d_name[namelen - 4] == '.') {
 	  char * extension = &dp->d_name[namelen -3];
@@ -1208,26 +1119,26 @@ int build_filelist(file_info ** filelist, DIR * dfd){
 	}
       }
       
-      sprintf(filelist[item_no]->size, "%.1fkb", ((float) stbuf.st_size) / 1024);
-      filelist[item_no]->bytes = stbuf.st_size;
+      sprintf(run_state.filelist[item_no]->size, "%.1fkb", ((float) stbuf.st_size) / 1024);
+      run_state.filelist[item_no]->bytes = stbuf.st_size;
       
-      filelist[item_no]->st_mode = stbuf.st_mode;
+      run_state.filelist[item_no]->st_mode = stbuf.st_mode;
       if (S_ISREG(stbuf.st_mode)) {
-	sprintf(filelist[item_no]->type, "FILE");
+	sprintf(run_state.filelist[item_no]->type, "FILE");
       } else if (S_ISDIR(stbuf.st_mode)) {
-	sprintf(filelist[item_no]->type, " DIR");
+	sprintf(run_state.filelist[item_no]->type, " DIR");
       }
       
-      sprintf(filelist[item_no]->description, "   %s%14s   %s", filelist[item_no]->type, filelist[item_no]->size, filelist[item_no]->mod_date);
-      filelist[item_no]->description[strlen(filelist[item_no]->description) - 1] = 0;
+      sprintf(run_state.filelist[item_no]->description, "   %s%14s   %s", run_state.filelist[item_no]->type, run_state.filelist[item_no]->size, run_state.filelist[item_no]->mod_date);
+      run_state.filelist[item_no]->description[strlen(run_state.filelist[item_no]->description) - 1] = 0;
       
       if (!strcmp(dp->d_name, "..")) item_no = last_item_no - 1;
       item_no++;	
     } 
   }
   closedir(dfd);
-  return item_no;
-  
+  run_state.filelist[item_no] = NULL;
+  run_state.n_choices = item_no;  
 }
 
 // Print test to the bottom box
@@ -1253,21 +1164,18 @@ void run_prog(file_info * current_file_info, char * prog_name){
   int status;
   pid_t cpid;
 
-  char * argstring = malloc(strlen(prog_name) + strlen(current_file_info->name) + 2);
-  strcpy(argstring, prog_name);
-  strcpy(&argstring[strlen(prog_name) + 1], current_file_info->name);
-  
-
+  // first parse program name and possible flags.
+  // Then add file name at end.
   int arg_count;
-  char ** args = arg_parse(argstring, &arg_count);
+  char ** args = arg_parse(prog_name, &arg_count);
+  args = realloc(args, sizeof(char *) * (arg_count + 2));
+  args[arg_count] = current_file_info->name;
+  args[arg_count + 1] = NULL;
   
 
-/*
-  char * args[3];
-  args[0] = prog_name;
-  args[1] = current_file_info->name;
-  args[2] = NULL;
-*/
+
+
+  
   int fd[2];
   int bufflen = 80;
   char errorbuff[bufflen];
@@ -1285,13 +1193,12 @@ void run_prog(file_info * current_file_info, char * prog_name){
     exit(127);
   }
   
-  
   while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
 
   free(args);
-  free(argstring);
+  //free(argstring);
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], errorbuff, bufflen);
@@ -1409,10 +1316,6 @@ void open_terminal(char * dirbuff){
   int status;
   pid_t cpid;;
 
-  //char * args[2];
-  //args[0] = "/bin/bash";
-  //args[1] = NULL;
-
   int fd[2];
   int bufflen = 80;
   char errorbuff[bufflen];
@@ -1420,15 +1323,10 @@ void open_terminal(char * dirbuff){
     perror("pipe");
   }
   
-  //ALLOW_INTERRUPT = 0;
-
   cpid = fork();
 
-  
-  
   if (cpid == 0){ //we are child
     close(fd[0]); // close read end of pipe
-    //execvp(args[0], args);
     printf("\n=================================================\n");
     printf(" bash session - %s\n", dirbuff);
     printf(" Type 'exit' to return to gopher\n");
@@ -1443,7 +1341,6 @@ void open_terminal(char * dirbuff){
   while (waitpid(cpid, &status, 0) < 0){
     perror("wait");
   }
-  //ALLOW_INTERRUPT = 1;
   write(fd[1], "Success", bufflen);
   close(fd[1]);
   read(fd[0], errorbuff, bufflen);
@@ -1452,7 +1349,6 @@ void open_terminal(char * dirbuff){
 
 // Signal handler for screen resize
 void handle_winch(int sig){
-  //fprintf(stderr, "Signal caught\n");
   MENUHEIGHT = LINES - 6;
   MENUWIDTH = COLS - 6;
   MENUWIDTH = MENUWIDTH > MENUWIDTH_MAX ? MENUWIDTH_MAX : MENUWIDTH;
@@ -1460,22 +1356,11 @@ void handle_winch(int sig){
   MENUHEIGHT = MENUHEIGHT > MENUHEIGHT_MAX ? MENUHEIGHT_MAX : MENUHEIGHT;
   if (!ALLOW_INTERRUPT) return;
 
-  DIR * dfd;
-  /*
-  MENUHEIGHT = LINES - 6;
-  MENUWIDTH = COLS - 6;
-  MENUWIDTH = MENUWIDTH > MENUWIDTH_MAX ? MENUWIDTH_MAX : MENUWIDTH;
-  
-  MENUHEIGHT = MENUHEIGHT > MENUHEIGHT_MAX ? MENUHEIGHT_MAX : MENUHEIGHT;
-  */
   endwin();
   refresh();
-  if (!(dfd = opendir(sig_dirbuff))){
-    fprintf(stderr, "Can't open directory\n");
-  }
-  *sig_nchoices = build_filelist(sig_filelist, dfd);
-  sortfiles(sig_filelist, *sig_nchoices, comp_func);
-  refresh_menu(sig_filelist, sig_menu_items, *sig_nchoices, sig_dir_menu, sig_dir_menu_win, sig_dirbuff);
+  refresh_filelist();
+  refresh_menu();
+  refresh_littlebox(run_state.msgbuff);
 }
 
 // Exec a given command
@@ -1573,7 +1458,6 @@ void zip(file_info * current_file_info, char * msgbuff){
     close(fd[0]);
     execlp("zip", "zip", "-r", archive_name, current_file_info->name, NULL);
     write(fd[1], strerror(errno), bufflen);
-    //perror("exec");
     fclose(stdin);
     exit(127);
   }
@@ -1606,7 +1490,6 @@ void unzip(file_info * current_file_info, char * msgbuff){
     close(fd[0]);
     execlp("unzip", "unzip", "-u", current_file_info->name, NULL);
     write(fd[1], strerror(errno), bufflen);
-    //perror("exec");
     fclose(stdin);
     exit(127);
   }
@@ -1678,7 +1561,6 @@ void extract_tar(file_info * current_file_info, char * msgbuff){
     close(fd[0]);
     execlp("tar", "tar", "-xzvf", current_file_info->name, NULL);
     write(fd[1], strerror(errno), bufflen);
-    //perror("exec");
     fclose(stdin);
     exit(127);
   }
