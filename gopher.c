@@ -102,10 +102,14 @@ typedef struct {
  
 
   char current_dir[MAXLEN];
+  char previous_dir[MAXLEN];
+  char home_dir[MAXLEN];
+  char saved_dir[MAXLEN];
   char msgbuff[MAXLEN];
   char clipboard[MAXLEN];
+  char tempbuff[MAXLEN];
   int n_choices;
-  char home_dir[MAXLEN];
+  
   char * copy_args[5];
   char * del_args[5];
 
@@ -278,9 +282,10 @@ int main() {
 	    } else {
 
 	      if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
-		chdir(run_state.filelist[item_no]->name);
-		getcwd(run_state.current_dir, MAXLEN);
-    CHANGEDIR = 1;
+          getcwd(run_state.previous_dir, MAXLEN);
+		      chdir(run_state.filelist[item_no]->name);
+		      getcwd(run_state.current_dir, MAXLEN);
+          CHANGEDIR = 1;
 		
 	      }
 	      break;
@@ -290,23 +295,55 @@ int main() {
 
 	  case KEY_RIGHT:
 	    curr = current_item(run_state.dir_menu);
-	      item_no = item_index(curr);
-	      if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
-		chdir(run_state.filelist[item_no]->name);
-		getcwd(run_state.current_dir, MAXLEN);
-		CHANGEDIR = 1;
-	      }
-	      break;
+	    item_no = item_index(curr);
+	    if (S_ISDIR(run_state.filelist[item_no]->st_mode)){        
+        getcwd(run_state.previous_dir, MAXLEN);
+		    chdir(run_state.filelist[item_no]->name);
+		    getcwd(run_state.current_dir, MAXLEN);
+		    CHANGEDIR = 1;
+	    }
+	    break;
 	    
 	  case KEY_LEFT:
 	  
 	    item_no = 0;
 	    if (S_ISDIR(run_state.filelist[item_no]->st_mode)){
+        getcwd(run_state.previous_dir, MAXLEN);
 	      chdir(run_state.filelist[item_no]->name);
 	      getcwd(run_state.current_dir, MAXLEN);
 	      CHANGEDIR = 1;
 	    }
 	    break;
+
+    // Jump to Home Directory
+    case '~':
+      getcwd(run_state.previous_dir, MAXLEN);
+      chdir(run_state.home_dir);
+	    getcwd(run_state.current_dir, MAXLEN);
+	    CHANGEDIR = 1;
+      break;
+
+    // Jump to Previous Directory
+    case '`':
+      strcpy(run_state.tempbuff, run_state.previous_dir);
+      getcwd(run_state.previous_dir, MAXLEN);
+      chdir(run_state.tempbuff);
+      getcwd(run_state.current_dir, MAXLEN);
+      CHANGEDIR = 1;
+      break;
+    
+    // Set Saved Directory
+    case '?':
+      getcwd(run_state.saved_dir, MAXLEN);
+      break;
+    
+    // Jump to Saved Directory
+    case '/':
+      getcwd(run_state.previous_dir, MAXLEN);
+      chdir(run_state.saved_dir);
+      getcwd(run_state.current_dir, MAXLEN);
+      CHANGEDIR = 1;
+      break;
 
 	  case 'S': //'=':
 	    comp_func = comp_func == &filecomp_size ? &filecomp_size_desc : &filecomp_size;
