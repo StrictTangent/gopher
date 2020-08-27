@@ -71,7 +71,7 @@ void destroy_filelist(file_info ** filelist);
 void clear_filelist(file_info ** filelist);
 ITEM * get_lettered_item(ITEM ** menu_items, ITEM * current, int num_items, char c);
 int build_filelist(file_info ** filelist, DIR * dfd);
-void refresh_littlebox(char * msg);
+void refresh_littlebox_color(char * msg, int color);
 
 int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu_win, ITEM ** opt_items, file_info * current_file_info, int item_no);
 void run_prog(file_info * current_file_info, char * prog_name);
@@ -86,6 +86,12 @@ void extract_tar(file_info * current_file_info, char * msgbuff);
 void zip(file_info * current_file_info, char * msgbuff);
 void compress_tar(file_info * current_file_info, char * msgbuff);
 void refresh_filelist();
+void copy_to_clipboard();
+void move_to_clipboard();
+void paste_from_clipboard();
+void remove_file();
+
+#define refresh_littlebox(m) refresh_littlebox_color((char *)(m), 0)
 
 char  ** arg_parse (char *line, int *argcptr);
 
@@ -93,10 +99,15 @@ char  ** arg_parse (char *line, int *argcptr);
 // Structure for current state of program
 typedef struct {
   file_info ** filelist;
+ 
+
   char current_dir[MAXLEN];
   char msgbuff[MAXLEN];
   char clipboard[MAXLEN];
   int n_choices;
+  char home_dir[MAXLEN];
+  char * copy_args[5];
+  char * del_args[5];
 
   MENU * dir_menu;
   ITEM ** menu_items;
@@ -160,23 +171,24 @@ int main() {
   run_state.filelist = calloc(1,sizeof(file_info *));
   run_state.clipboard[0] = 0;
 
-  char * copy_args[5];
-  copy_args[0] = "cp";
-  copy_args[1] = "-r";
-  copy_args[2] = NULL;
-  copy_args[3] = NULL;
-  copy_args[4] = NULL;
+  //char * copy_args[5];
+  run_state.copy_args[0] = "cp";
+  run_state.copy_args[1] = "-r";
+  run_state.copy_args[2] = NULL;
+  run_state.copy_args[3] = NULL;
+  run_state.copy_args[4] = NULL;
 
-  char * del_args[4];
-  del_args[0] = "rm";
-  del_args[1] = "-rf";
-  del_args[3] = NULL;
+  //char * del_args[4];
+  run_state.del_args[0] = "rm";
+  run_state.del_args[1] = "-rf";
+  run_state.del_args[3] = NULL;
 
   int CHANGEDIR;
 
   //logfile
   struct passwd *pw = getpwuid(getuid());
   const char *homedir = pw->pw_dir;
+  strcpy(run_state.home_dir, homedir);
   char logdir[200];
   sprintf(logdir, "%s/.gopherlog", homedir);
   int log_fd = open(logdir, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
@@ -312,220 +324,19 @@ int main() {
 	    break;
 
 	  case 'C': //shift + c COPY
-	    
-	    item_no = item_index(current_item(run_state.dir_menu));
-	    if (item_no == 0) break;
-	    if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
-	      
-	      if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
-		refresh_littlebox("Unable to copy file...");
-		run_state.clipboard[0] = 0;
-		break;
-	      }
-	      copy_args[0] = "cp";
-	      copy_args[1] = "-rf";
-	      if (copy_args[2]) free(copy_args[2]);
-	      if (copy_args[3]) free(copy_args[3]);
-	      copy_args[2] = strdup(run_state.clipboard);
-	      
-	      if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Copied to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
-		// Do nothing
-	      }
-	      
-	      if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");
-	      
-	      refresh_littlebox(run_state.msgbuff);
-
-	    }
+	    copy_to_clipboard();
 	    break;
 
 	  case 'X':
-	    item_no = item_index(current_item(run_state.dir_menu));
-	    if (item_no == 0) break;
-	    if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
-	      
-	      if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
-		refresh_littlebox("Unable to move file...");
-		run_state.clipboard[0] = 0;
-		break;
-	      }
-	      copy_args[0] = "mv";
-	      copy_args[1] = "-f";
-	      if (copy_args[2]) free(copy_args[2]);
-	      if (copy_args[3]) free(copy_args[3]);
-	      copy_args[2] = strdup(run_state.clipboard);
-	      
-	      if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Moved to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
-		// Do nothing
-	      }
-	      
-	      if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");
-	      
-	      refresh_littlebox(run_state.msgbuff);
-
-	    }
+      move_to_clipboard();
 	    break;
 	    
 	  case 'V': //shift + v PASTE
-
-	    if (run_state.clipboard[0] == 0) break;
-
-	    //find filename of file to be copied
-	    i = strlen(run_state.clipboard) - 1;
-	    while (run_state.clipboard[i] != '/'){
-	      i--;
-	    }
-	    i++;
-	    fprintf(stderr, "name to copy is: %s\n", &run_state.clipboard[i]);
-
-	    copy_args[3] = strdup(run_state.current_dir); // directory to copy/move to
-	    for (item_no = 0; item_no < run_state.n_choices; item_no++){
-	      if (!strcmp(&run_state.clipboard[i], run_state.filelist[item_no]->name)){
-          ALLOW_INTERRUPT = 0;
-		refresh_littlebox("Filename already exists. (r)ename, (o)verwrite, or (a)bort...");
-		while (1){
-      refresh_littlebox("Filename already exists. (r)ename, (o)verwrite, or (a)bort...");
-		  c = getch();
-		  if (c == 'r'){
-		    refresh_littlebox("New Name: ");
-		    echo();
-		    curs_set(1);
-		    if (getstr(run_state.msgbuff) == ERR){
-          curs_set(0);
-		      noecho();
-          abort = 1;
-          refresh_littlebox("Whoops! Did not copy file");
-          
-        }
-		    curs_set(0);
-		    noecho();
-		    free(copy_args[3]);
-		    for (item_no = 0; item_no < run_state.n_choices; item_no++){
-		      if (!strcmp(run_state.msgbuff, run_state.filelist[item_no]->name)) {
-			refresh_littlebox("That name already exists. Failed to write file");
-			abort = 1;
-			break;
-		      }
-		    }
-		    copy_args[3] = strdup(run_state.msgbuff);
-		    break;
-		  } else if (c == 'a'){
-		    refresh_littlebox("Did not copy file");
-		    
-		    abort = 1;
-		    break;
-		  } else if (c == 'o'){
-		    break;
-		  }
-      
-		}
-		
-		break;
-	      }
-	    }
-	    if (abort) {
-	      free(copy_args[3]);
-	      copy_args[3] = NULL;
-	      break;
-	    }
-	    
-	    cpid = fork();
-      
-	    if (cpid == 0){ //we are child
-	
-	      execvp(copy_args[0], copy_args);
-	      
-	      perror("exec");
-	      
-	      
-	      fclose(stdin);
-	      exit(127);
-	    }
-	    if (copy_args[0][0] == 'c')
-	      refresh_littlebox("Copying...");
-	    else
-	      refresh_littlebox("Moving...");
-	    
-	    while (waitpid(cpid, &status, 0) < 0){
-	      perror("wait");
-	    }
-	    
-	    
-      refresh_filelist();
-	    refresh_menu();
-	    
-	    if (copy_args[0][0] == 'c') {
-	      refresh_littlebox("File copied");
-	    } else {
-	      refresh_littlebox("File moved");
-	      run_state.clipboard[0] = 0;
-	    }
-      ALLOW_INTERRUPT = 1;
+      paste_from_clipboard();
 	    break;
 
 	  case KEY_DC: // DELETE
-	    item_no = item_index(current_item(run_state.dir_menu));
-	    
-	    if (!strcmp(run_state.filelist[item_no]->name, "..")){
-	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
-	      clrtoeol();
-	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
-	      attron(COLOR_PAIR(1));
-        
-	      mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Cannot delete parent directory! (Press any key to continue)", run_state.filelist[item_no]->name);
-	      attroff(COLOR_PAIR(1));
-	      getch();
-        
-	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
-	      clrtoeol();
-	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
-	      refresh();
-	      break;
-	    }
-
-	    move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
-	    clrtoeol();
-	    mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
-	    attron(COLOR_PAIR(1));
-      ALLOW_INTERRUPT = 0;
-	    mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Are you SURE you wish to delete this file? (y/n)");
-	    attroff(COLOR_PAIR(1));
-	    do {
-	      c = getch();
-	    } while(c != 'y' && c != 'n');
-      ALLOW_INTERRUPT = 1;
-	    if (c != 'y') {
-	      move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
-	      clrtoeol();
-	      mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
-	      refresh();
-	      break;
-	    }
-	    move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
-	    clrtoeol();
-	    mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
-	    refresh();
-	    
-	    del_args[2] = strdup(run_state.filelist[item_no]->name);
-	    
-	    cpid = fork();
-      
-	    if (cpid == 0){ //we are child
-	      execvp(del_args[0], del_args);
-
-	      perror("exec");
-	      fclose(stdin);
-	      exit(127);
-	    }
-	  
-	    if (waitpid(cpid, &status, 0) < 0){
-	      perror("wait");
-	    }
-	    free(del_args[2]);
-	    
-	    refresh_filelist();
-	    refresh_menu();
-	    set_current_item(run_state.dir_menu, run_state.menu_items[item_no]);
+      remove_file();
 	    break;
 
 
@@ -631,8 +442,8 @@ int main() {
   free(run_state.menu_items);
   free(opt_items);
   destroy_filelist(run_state.filelist);
-  if (copy_args[2]) free(copy_args[2]);
-  if (copy_args[3]) free(copy_args[3]);
+  if (run_state.copy_args[2]) free(run_state.copy_args[2]);
+  if (run_state.copy_args[3]) free(run_state.copy_args[3]);
   
   endwin();
   return 0;
@@ -1142,7 +953,7 @@ void refresh_filelist(){
 }
 
 // Print test to the bottom box
-void refresh_littlebox(char * msg){
+void refresh_littlebox_color(char * msg, int color){
   move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
   clrtoeol();
   // box for filename
@@ -1154,8 +965,9 @@ void refresh_littlebox(char * msg){
   mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
   mvaddch(MENUHEIGHT + Y_OFFSET , X_OFFSET + MENUWIDTH - 1, ACS_URCORNER);
   mvaddch(MENUHEIGHT + Y_OFFSET +2, X_OFFSET + MENUWIDTH - 1, ACS_LRCORNER);
-  
+  if (color) attron(COLOR_PAIR(color));
   mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "%s", msg);
+  if (color) attroff(COLOR_PAIR(color));
   refresh();
 }
 
@@ -1574,4 +1386,217 @@ void extract_tar(file_info * current_file_info, char * msgbuff){
   close(fd[1]);
   read(fd[0], msgbuff, bufflen);
   ALLOW_INTERRUPT = 1;
+}
+
+void copy_to_clipboard(){
+  int item_no = item_index(current_item(run_state.dir_menu));
+	if (item_no == 0) return;
+	if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
+	      
+	  if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
+		refresh_littlebox("Unable to copy file...");
+		run_state.clipboard[0] = 0;
+		return;
+	  }
+	  run_state.copy_args[0] = "cp";
+	  run_state.copy_args[1] = "-rf";
+	  if (run_state.copy_args[2]) free(run_state.copy_args[2]);
+	  if (run_state.copy_args[3]) free(run_state.copy_args[3]);
+	  run_state.copy_args[2] = strdup(run_state.clipboard);
+	      
+	  if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Copied to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
+		  // Do nothing
+	  }
+	      
+	  if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");  
+	    refresh_littlebox(run_state.msgbuff);
+	}
+}
+
+void move_to_clipboard() {
+  int item_no = item_index(current_item(run_state.dir_menu));
+	if (item_no == 0) return;
+	if (strlen(run_state.current_dir) + strlen(run_state.filelist[item_no]->name) + 2 < MAXLEN){
+	      
+	  if (snprintf(run_state.clipboard, MAXLEN, "%s/%s", run_state.current_dir, run_state.filelist[item_no]->name) >= MAXLEN){
+		  refresh_littlebox("Unable to move file...");
+		  run_state.clipboard[0] = 0;
+		  return;
+	  }
+	  run_state.copy_args[0] = "mv";
+	  run_state.copy_args[1] = "-f";
+	  if (run_state.copy_args[2]) free(run_state.copy_args[2]);
+	  if (run_state.copy_args[3]) free(run_state.copy_args[3]);
+	  run_state.copy_args[2] = strdup(run_state.clipboard);
+	      
+	  if (snprintf(run_state.msgbuff, MSGWIDTH - 2, "Moved to Clipboard: %s", run_state.clipboard) > MSGWIDTH -2){
+		  // Do nothing
+	  }
+	      
+	  if (strlen(run_state.msgbuff) >= MSGWIDTH - 3) sprintf(&run_state.msgbuff[MSGWIDTH -6], "...");    
+	  refresh_littlebox(run_state.msgbuff);
+  }
+}
+
+void paste_from_clipboard(){
+  if (run_state.clipboard[0] == 0) return;
+
+	//find filename of file to be copied
+	int i = strlen(run_state.clipboard) - 1;
+  int abort = 0;
+  int item_no;
+	while (run_state.clipboard[i] != '/'){
+	  i--;
+	}
+	i++;
+	fprintf(stderr, "name to copy is: %s\n", &run_state.clipboard[i]);
+
+	run_state.copy_args[3] = strdup(run_state.current_dir); // directory to copy/move to
+	for (item_no = 0; item_no < run_state.n_choices; item_no++){
+	  if (!strcmp(&run_state.clipboard[i], run_state.filelist[item_no]->name)){
+      ALLOW_INTERRUPT = 0;
+          
+		  while (1){
+        refresh_littlebox_color("Filename already exists. (r)ename, (o)verwrite, or (a)bort...", 1);
+		    int c = getch();
+		    if (c == 'r'){
+		      refresh_littlebox("New Name: ");
+		      echo();
+		      curs_set(1);
+		      if (getstr(run_state.msgbuff) == ERR){
+            curs_set(0);
+		        noecho();
+            abort = 1;
+            refresh_littlebox("Whoops! Did not copy file");
+          
+          }
+		      curs_set(0);
+		      noecho();
+		      free(run_state.copy_args[3]);
+		      for (item_no = 0; item_no < run_state.n_choices; item_no++){
+		        if (!strcmp(run_state.msgbuff, run_state.filelist[item_no]->name)) {
+			        refresh_littlebox("That name already exists. Failed to write file");
+			        abort = 1;
+			        break;
+		        }
+		      }
+		      run_state.copy_args[3] = strdup(run_state.msgbuff);
+		      break;
+		    } else if (c == 'a'){
+		      refresh_littlebox("Did not copy file");
+		    
+		      abort = 1;
+		      break;
+		    } else if (c == 'o'){
+		      break;
+		    }
+      
+		  }
+		
+		  break;
+	  }
+	}
+	if (abort) {
+	  free(run_state.copy_args[3]);
+	  run_state.copy_args[3] = NULL;
+	  return;
+	}
+	    
+	pid_t cpid = fork();
+  int status;
+      
+	if (cpid == 0){ //we are child
+	
+	  execvp(run_state.copy_args[0], run_state.copy_args);
+	  perror("exec");
+	  fclose(stdin);
+	  exit(127);
+	}
+	if (run_state.copy_args[0][0] == 'c')
+	  refresh_littlebox("Copying...");
+	else
+	  refresh_littlebox("Moving...");
+	    
+	while (waitpid(cpid, &status, 0) < 0){
+	  perror("wait");
+	}
+	    
+	    
+  refresh_filelist();
+	refresh_menu();
+	    
+	if (run_state.copy_args[0][0] == 'c') {
+	  refresh_littlebox("File copied");
+	} else {
+	  refresh_littlebox("File moved");
+	  run_state.clipboard[0] = 0;
+	}
+  ALLOW_INTERRUPT = 1;
+}
+
+void remove_file(){
+  
+	int item_no = item_index(current_item(run_state.dir_menu));
+	    
+	if (!strcmp(run_state.filelist[item_no]->name, "..")){
+	  move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
+	  clrtoeol();
+	  mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
+	  attron(COLOR_PAIR(1));
+        
+	  mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Cannot delete parent directory! (Press any key to continue)", run_state.filelist[item_no]->name);
+	  attroff(COLOR_PAIR(1));
+	  getch();
+        
+	  move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
+	  clrtoeol();
+	  mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
+	  refresh();
+	  return;
+	}
+
+  move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
+	clrtoeol();
+	mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
+	attron(COLOR_PAIR(1));
+  ALLOW_INTERRUPT = 0;
+	mvprintw(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4, "Are you SURE you wish to delete this file? (y/n)");
+	attroff(COLOR_PAIR(1));
+  int c;
+  do {
+	  c = getch();
+	} while(c != 'y' && c != 'n');
+  ALLOW_INTERRUPT = 1;
+	if (c != 'y') {
+	  move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
+	  clrtoeol();
+	  mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
+	  refresh();
+	  return;
+	}
+	move(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + 4);
+	clrtoeol();
+	mvaddch(MENUHEIGHT + Y_OFFSET + 1, X_OFFSET + MENUWIDTH - 1, ACS_VLINE);
+	refresh();
+	    
+	run_state.del_args[2] = strdup(run_state.filelist[item_no]->name);
+	    
+  int status;
+	pid_t cpid = fork();
+      
+	if (cpid == 0){ //we are child
+	  execvp(run_state.del_args[0], run_state.del_args);
+    perror("exec");
+	  fclose(stdin);
+	  exit(127);
+  }
+	  
+	if (waitpid(cpid, &status, 0) < 0){
+	  perror("wait");
+	}
+	free(run_state.del_args[2]);
+	    
+	refresh_filelist();
+	refresh_menu();
+	set_current_item(run_state.dir_menu, run_state.menu_items[item_no]);
 }
