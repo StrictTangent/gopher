@@ -41,7 +41,11 @@ Navigate with arrow keys.
 F1        =  Exit\
 LEFT      =  Back / Up a level\
 RIGHT     =  Enter Directory\
-ENTER     =  Options Menu
+ENTER     =  Options Menu\
+\` = Jump to Previous Directory\
+~ = Jump to Home Directory\
+? = Set Saved Directory\
+/ = Jump to Saved Directory
 
 a-z       =  Jump to next item beginning with letter.
 
