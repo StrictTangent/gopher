@@ -335,6 +335,8 @@ int main() {
     // Set Saved Directory
     case '?':
       getcwd(run_state.saved_dir, MAXLEN);
+      if (snprintf(run_state.msgbuff, MAXLEN, "Saved Directory: %s", run_state.saved_dir) < MAXLEN)
+	refresh_littlebox(run_state.msgbuff);
       break;
     
     // Jump to Saved Directory
@@ -587,7 +589,7 @@ int present_options(WINDOW ** dir_menu_win, MENU ** opt_menu, WINDOW ** opt_menu
 		       NULL,
            NULL};
   n_choices = 16;
-  if (strstr(current_file_info->name, ".tar.gz")){
+  if (strstr(current_file_info->name, ".tar.gz") || strstr(current_file_info->name, ".tar.xz")){
     f_options[11] = "EXTRACT HERE";
     f_options[12] = f_options[14];
     f_options[13] = f_options[15];
@@ -1408,7 +1410,8 @@ void extract_tar(file_info * current_file_info, char * msgbuff){
   cpid = fork();
   if (cpid == 0){ //we are child
     close(fd[0]);
-    execlp("tar", "tar", "-xzvf", current_file_info->name, NULL);
+    //execlp("tar", "tar", "-xzvf", current_file_info->name, NULL);
+    execlp("tar", "tar", "-xf", current_file_info->name, NULL);
     write(fd[1], strerror(errno), bufflen);
     fclose(stdin);
     exit(127);
